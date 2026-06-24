@@ -1,0 +1,15 @@
+# أسرار وبيانات وملفات ضخمة — لا تُرفع أبداً (R-ARCH-02/42)
+config/env/.env
+*.override.yml
+*.override.yaml
+
+# موديلات (كبيرة)
+models/
+
+# Python
+__pycache__/
+*.pyc
+.venv*/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/

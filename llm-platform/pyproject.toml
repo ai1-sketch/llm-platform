@@ -1,0 +1,51 @@
+# llm-platform — إعداد أدوات الجودة (تجسيد ADR-008). الأدوات: Ruff + Mypy + pytest.
+# النطاق: كود llm-platform/ فقط (سكربتات QEWN sandbox غير مشمولة).
+# الإصدارات الدقيقة تُثبَّت في lockfile عند أوّل تثبيت (حتمية المخرجات — ADR-008).
+
+[project]
+name = "llm-platform"
+version = "0.1.0"
+description = "Internal company LLM platform"
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+dev = [
+  "ruff",        # format + lint + import-sort + complexity (موحّد)
+  "mypy",        # type checking (وضع basic)
+  "pytest",
+  "pre-commit",
+  # pytest-cov مؤجَّل حتى ظهور أوّل منطق حرج يستحق قياس التغطية (ADR-008، anti-bloat)
+]
+
+# ───────────── Ruff ─────────────
+[tool.ruff]
+target-version = "py312"
+line-length = 100          # عرض السطر (أحرف) للـ formatter — ليس عدد أسطر الملف
+
+[tool.ruff.lint]
+# النواة فقط (نبدأ صغيراً لا 800 قاعدة): E,F=أخطاء حقيقية · I=ترتيب الاستيراد ·
+# UP=تحديث صياغة · B=bugbear · SIM=تبسيط · C90=complexity · PLR0913/0915=حدود هيكلية
+select = ["E", "F", "I", "UP", "B", "SIM", "C90", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10        # C901 — بوّابة (إشارة بَغ، ليست مجرّد أسلوب)
+
+[tool.ruff.lint.pylint]
+max-statements = 50        # PLR0915 — طول الدالة: بوّابة + override مبرّر (# noqa + سبب)
+max-args = 6               # PLR0913
+
+# ملاحظة (ADR-008): لا قاعدة "طول ملف" في Ruff → حدّ 180 للملف **إرشادي** في
+# ARCHITECTURE_RULES، وليس بوّابة CI. يُراجَع بشرياً.
+
+# ───────────── Mypy (وضع basic — ADR-008) ─────────────
+[tool.mypy]
+python_version = "3.12"
+warn_unused_ignores = true     # يكشف # type: ignore غير المستخدم
+warn_redundant_casts = true
+# basic mode: لا strict الآن (تفادي غرق stubs الخارجية gradio/llama_cpp). يُرفع لاحقاً بـ ADR.
+# سياسة: ممنوع `# type: ignore` بلا كود سبب (تُفرَض بالمراجعة).
+
+# ───────────── pytest + coverage (التغطية إشارة لا بوّابة — ADR-008) ─────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# التغطية إشارة لا بوّابة (ADR-008): شغّلها يدوياً عند الحاجة (pytest --cov) بعد تثبيت pytest-cov.

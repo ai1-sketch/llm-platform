@@ -1,0 +1,22 @@
+# llm-platform — إعداد LiteLLM = **نقطة التبديل الوحيدة** (R-ARCH-45).
+# البدء بمحرّك محلي Gemma 4 (ADR-010/011). اسم الموديل منطقي حيادي (R-ARCH-33).
+# تبديل المحرّك/المزوّد لاحقاً = تعديل هذا الملف **فقط** (سطر واحد).
+
+model_list:
+  - model_name: company-chat               # اسم ثابت للعميل مهما تغيّر خلفه
+    litellm_params:
+      model: openai/gemma-4-e2b            # بادئة openai/ = عميل OpenAI-compatible
+      api_base: http://llamacpp:8080/v1    # خدمة المحرّك على شبكة compose الداخلية
+      api_key: os.environ/LLAMACPP_API_KEY # يطابق --api-key للمحرّك (داخلي)
+      max_tokens: 2048                     # ميزانية افتراضية تكفي تفكير Gemma 4 + الجواب (تُطبَّق عند إغفال العميل)
+  # للتبديل لـ managed لاحقاً: علّق ما فوق وفعّل أحد البدائل (أبقِ model_name = company-chat):
+  #   model: anthropic/<model>   api_key: os.environ/ANTHROPIC_API_KEY
+  #   model: openai/<model>      api_key: os.environ/OPENAI_API_KEY
+
+litellm_settings:
+  drop_params: true
+  json_logs: true        # تسجيل مهيكل JSON (R-ERR-14)
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
