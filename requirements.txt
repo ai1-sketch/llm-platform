@@ -1,0 +1,16 @@
+# متطلبات تشغيل Qwen3-0.6B
+#
+# مهم: PyTorch بنسخة CUDA يُركّب أولاً ومن مصدر خاص (مش من PyPI العادي):
+#
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+#
+# بعدها ركّب باقي المتطلبات:
+#
+#   pip install -r requirements.txt
+
+transformers>=4.51.0
+accelerate
+gradio
+
+# للطريقة الأكفأ (llama.cpp) — تُثبّت من فهرس خاص:
+#   pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu124 --only-binary=:all:

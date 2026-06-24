@@ -1,0 +1,13 @@
+# بيئة افتراضية وملفات ضخمة — لا تُحفظ في git
+.venv/
+.venv-*/
+models/
+wheels/
+
+# كاش وملفات مؤقتة
+__pycache__/
+*.pyc
+.gradio/
+gradio_cached_examples/
+*.log
+_*.py
