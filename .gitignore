@@ -6,6 +6,7 @@ config/env/.env
 # موديلات وأوزان كبيرة (تُنزَّل محلياً، خارج git)
 models/
 models-gemma4/
+models-embeddings/
 wheels/
 
 # بيئات افتراضية (قابلة لإعادة الإنشاء)

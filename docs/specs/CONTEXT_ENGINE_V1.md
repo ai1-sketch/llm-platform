@@ -133,6 +133,7 @@ Context Builder (خط أنابيب حتمي v1):
 
 <a id="11-المتطلبات-المسبقة"></a>
 ## 11. المتطلّبات المسبقة (تُنجَز قبل أي جدول/متجه)
+> ✅ **كلها مُنجَزة (M0)** — التفاصيل في §16. (pgvector مُفعّل · البُعد=1024 · conversation_id=`X-OpenWebUI-Chat-Id`.)
 - **P-req-1:** تبديل صورة Postgres إلى `pgvector/pgvector:pg16` + إعادة تثبيت digest + checkpoint (ADR-020). bootstrap `CREATE EXTENSION IF NOT EXISTS vector/pg_trgm/unaccent` يفشل **بصوت** (CONFIG error) لا stack-trace.
 - **P-req-2:** قياس بُعد Qwen3-Embedding-0.6B (تضمين نصّ، قياس الطول) → تثبيت `embedding_dim` في مكان واحد.
 - **P-req-3:** spike لـ `conversation_id`: تأكيد كيف يمرّره Open WebUI (header/حقل) وثباته عبر التعديل/إعادة التوليد — قبل بناء التقاط الأدوار/scoping الملفات.
@@ -169,6 +170,9 @@ Context Builder (خط أنابيب حتمي v1):
 
 <a id="16-نقطة-الاستئناف"></a>
 ## 16. نقطة الاستئناف (Resume)
-**الحالة الآن:** معتمد، التنفيذ جارٍ.
-- ✅ **M0.1 (pgvector)** — بُدّلت صورة Postgres إلى `pgvector/pgvector:pg16` (digest مثبّت)؛ البيانات سليمة (74 جدول litellm محفوظة)؛ الامتدادات مُفعّلة (`vector 0.8.3`, `pg_trgm 1.6`, `unaccent 1.1`)؛ 5 خدمات healthy؛ الدردشة 200. نسخة أمان: `C:\tmp\litellm_backup.sql`. checkpoints: v10 (قبل) / v11 (بعد).
-- [ ] **M0.4** embeddings (Qwen3-Embedding-0.6B) → [ ] **M0.2** تثبيت البُعد → [ ] **M0.3** spike conversation_id → ثم **M1**.
+**الحالة الآن:** معتمد، **M0 (المتطلّبات المسبقة) مكتمل ✅** — جاهزون لـ **M1**.
+- ✅ **M0.1 (pgvector)** — صورة `pgvector/pgvector:pg16` (digest مثبّت)؛ البيانات سليمة (74 جدول litellm)؛ الامتدادات مُفعّلة (`vector 0.8.3`, `pg_trgm 1.6`, `unaccent 1.1`)؛ نسخة أمان `C:\tmp\litellm_backup.sql`. checkpoints v10/v11.
+- ✅ **M0.4 (embeddings)** — خدمة `embeddings` (llama.cpp CPU، Qwen3-Embedding-0.6B-Q8_0، `--embedding --pooling last`، digest مثبّت) خلف `/v1/embeddings` عبر litellm (موديل `embed-default`). نداء تضمين نجح عبر البوّابة.
+- ✅ **M0.2 (البُعد)** — مقيس فعلياً = **1024** (يؤكّد `halfvec(1024)`). `embedding_model_version = "qwen3-emb-0.6b-q8@1024"`، `embedding_dim = 1024` (مُصدَّر؛ تغييره = عمود v2 + backfill).
+- ✅ **M0.3 (conversation_id)** — **`X-OpenWebUI-Chat-Id`** يحمل معرّف المحادثة، و**`X-OpenWebUI-Message-Id`** للـ provenance؛ يُمرَّران عبر `ENABLE_FORWARD_USER_INFO_HEADERS` المُفعّل. الثبات per-conversation مؤكَّد من المصدر؛ تحقّق التعديل/إعادة-التوليد عند بناء التقاط الأدوار (M4).
+- **التالي: M1** — هجرة الجداول الثلاثة + عقد `MemoryItem` + مُحوّلات Normalize.

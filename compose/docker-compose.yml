@@ -34,6 +34,20 @@ services:
     # لا healthcheck: الصورة minimal بلا curl. litellm تعتمد عليها بـ service_started وتعيد المحاولة حتى يُحمَّل الموديل.
     # (عند أوّل تشغيل: docker exec llamacpp sh -c "which curl wget python3" لتقرير healthcheck لاحق على /health.)
 
+  embeddings:                                # محرّك التضمين: Qwen3-Embedding-0.6B على CPU (ADR-019) — لا يزاحم Gemma على الـ GPU
+    image: ghcr.io/ggml-org/llama.cpp@sha256:354391e1edaa308ae3145f3137deab808e7f4fcef55f331443f7f68c158f6a12   # llama.cpp:server (CPU) مُثبَّت بـ digest (2026-06-25، ADR-019)
+    restart: unless-stopped
+    volumes:
+      - "${EMBED_MODEL_DIR:-../models-embeddings}:/models:ro"   # مجلّد GGUF للتضمين (نسبةً لـ compose/)
+    command: >
+      -m /models/${EMBED_MODEL_FILE:-Qwen3-Embedding-0.6B-Q8_0.gguf}
+      --embedding --pooling last
+      --host 0.0.0.0 --port 8080
+      --ctx-size ${EMBED_CTX_SIZE:-2048}
+      --api-key ${LLAMACPP_API_KEY:?LLAMACPP_API_KEY مفقود}
+    networks: [internal]                       # داخلية فقط (غير مكشوفة)
+    # CPU فقط (بلا حجز GPU) — يوفّر VRAM لـ Gemma. لا healthcheck (صورة minimal بلا curl).
+
   litellm:                                   # البوّابة (R-ARCH-31)
     image: ghcr.io/berriai/litellm@sha256:8f3517476b8293ccc1c3b0da7940d8dabbfe64b013454113f5a3cb68265c439b   # main-stable مُثبَّت بـ digest (2026-06-25)
     restart: unless-stopped

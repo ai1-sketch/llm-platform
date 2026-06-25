@@ -11,6 +11,13 @@ model_list:
       max_tokens: 2048                     # ميزانية افتراضية تكفي تفكير Gemma 4 + الجواب (تُطبَّق عند إغفال العميل)
     model_info:
       supports_vision: true                # يسمح بتمرير الصور (image_url/base64) عبر العقد إلى المحرّك (ADR-014)
+  - model_name: embed-default              # التضمين للذاكرة/RAG: Qwen3-Embedding-0.6B على CPU خلف /v1/embeddings (ADR-019)
+    litellm_params:
+      model: openai/qwen3-embedding-0.6b   # بادئة openai/ = عميل OpenAI-compatible؛ يُوجَّه لخدمة embeddings
+      api_base: http://embeddings:8080/v1  # خدمة التضمين على شبكة compose الداخلية
+      api_key: os.environ/LLAMACPP_API_KEY # نفس المفتاح الداخلي للمحرّكات
+    model_info:
+      mode: embedding                      # يُعرّفه موديل تضمين (يوجّه /v1/embeddings)
   # للتبديل لـ managed لاحقاً: علّق ما فوق وفعّل أحد البدائل (وحدّث model_name ليطابق الموديل الجديد — ADR-017):
   #   model: anthropic/<model>   api_key: os.environ/ANTHROPIC_API_KEY
   #   model: openai/<model>      api_key: os.environ/OPENAI_API_KEY
