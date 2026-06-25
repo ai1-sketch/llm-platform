@@ -76,7 +76,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
 ## 4. اصطلاحات التسمية (Naming)
 
 - **R-ARCH-30** — **الملفات والمجلدات:** `kebab-case` (مثل `litellm-config.yaml`). الاستثناء الوحيد: الوثائق بصيغة `SCREAMING_SNAKE_CASE.md`.
-- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `llamacpp`, `postgres`. ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة. (مثال البلوبرنت §10.2 يستخدم حالياً `engine/gateway/webui/db` ويجب تصحيحه لمطابقة هذه القاعدة — يُحسم بـ ADR.)
+- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `llamacpp`, `postgres`, `memory` (أُضيفت بـ [ADR-012](DECISIONS.md)/[ADR-013](DECISIONS.md)). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة. (مثال البلوبرنت §10.2 يستخدم حالياً `engine/gateway/webui/db` ويجب تصحيحه لمطابقة هذه القاعدة — يُحسم بـ ADR.)
 - **R-ARCH-32** — **متغيّرات البيئة:** `SCREAMING_SNAKE_CASE` ببادئة المكوّن: `LITELLM_*`, `WEBUI_*`, `DATABASE_URL`. تتطابق حرفياً مع `config/env/.env.example`.
 - **R-ARCH-33** — **أسماء الموديلات في `model_list`:** اسم منطقي حيادي (`local-chat`, `embed-default`)، لا اسم محرّك أو مسار ملف — كي يبقى التبديل خلفه شفّافاً للعميل.
 - **R-ARCH-34** — حقل `service` في كل log/خطأ (R-ERR-05) **يطابق حرفياً اسم خدمة Docker** المعتمدة في R-ARCH-31 (`litellm`، لا `litellm-gateway`)؛ كي يعمل تتبّع `request_id` عبر الطبقات بـ grep واحد (R-ERR-25).

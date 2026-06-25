@@ -86,3 +86,21 @@
 **Context:** قرار المالك بعد عرض المفترق (Docker-GPU مقابل native): تشغيل المحرّك داخل Docker مع GPU، لأجل النظافة وقابلية النقل (الـ stack كله محاوى).
 **Decision:** تُضاف خدمة محرّك (llama.cpp server بصورة CUDA) تخدم Gemma 4 على GPU وتكشف العقد `/v1` داخلياً؛ البوّابة تشير إليها. يتطلّب **NVIDIA Container Toolkit داخل WSL2** (شرط مسبق).
 **Consequences:** (+) stack موحّد ومحاوى وقابل للنقل للسحابة (نفس النمط). (−) إعداد GPU-in-Docker أعقد على ويندوز؛ **ويجب التأكد أن صورة llama.cpp المستخدمة تدعم معمارية `gemma4`** قبل الاعتماد — قد نحتاج صورة مبنية من الـ wheel المخصّص إن لم تدعمها الصورة العامة.
+
+## ADR-012 — معمارية الذاكرة (Memory)
+**Status:** مقبول
+**Context:** طلب المالك ذاكرة "بأفضل وسيلة". مسح موسوعي ([research/MEMORY_LANDSCAPE.md](../research/MEMORY_LANDSCAPE.md)، 11 مساعد) + قيود (6GB مؤقّت/الهدف GPU أقوى، حياد الموديل والواجهة، العربية). آلية الهوية per-user **مُثبَتة end-to-end** (تجربة حيّة).
+**Decision:** ذاكرة per-user **خلف البوّابة عبر LiteLLM hook** (حياد الموديل والواجهة). المحرّك: **Mem0 self-hosted** (وضع vector، بلا graph) — استخراج/dedup/scoping جاهز عبر عقد /v1. التخزين: **pgvector** على Postgres الموجود (schema منفصل عن litellm). التضمين: **Qwen3-Embedding-0.6B** (multilingual، مثبّت one-way-door + `embedding_model_version`). العزل: `X-OpenWebUI-User-Id` (عبر `ENABLE_FORWARD_USER_INFO_HEADERS` — مُثبَت) + RLS. **HITL**: تأكيد بشري قبل الحفظ (مبدئياً). حوكمة: عرض/تصحيح/حذف per-user. يبدأ بسيط (RAG top-k)، يصعّد بالقياس.
+**Consequences:** (+) حياد كامل، إعادة استخدام Postgres، عزل per-user آمن مُثبَت، صيانة أقل (Mem0 جاهز)، قابل للتوسّع للهدف السحابي، قابل للتبديل (نرجع لـ "صفر-إطار" أو نرقّي لـ Zep بسهولة). (−) Mem0 خدمة خامسة → **يعدّل R-ARCH-31** (تُضاف `mem0` لقائمة الخدمات، مبرَّر هنا). استخراج Mem0 يستهلك LLM (مقبول على GPU الهدف؛ على اللاب يُخنَق async/ليلي). **ثابت أمني حرج:** البوّابة تبقى داخلية وإلا انتحال الهوية عبر الـ header. جودة الاستخراج العربي تحتاج تحقّقاً + HITL مبكراً.
+
+## ADR-013 — تنفيذ ذاكرة المرحلة 1 = خدمة L1 مخصّصة (لا Mem0 بعد)
+**Status:** مقبول (يُكمّل/يعدّل تنفيذ ADR-012 لـ Phase 1)
+**Context:** ADR-012 اعتمد Mem0 كهدف. عند التنفيذ تبيّن: صورة litellm بلا pg driver (httpx فقط)، وأبسط L1 (ذاكرة صريحة HITL) لا تحتاج embeddings ولا Mem0. مبدأ "ابدأ بسيط" (§5).
+**Decision:** المرحلة 1 = **خدمة `memory` مخصّصة صغيرة** (FastAPI + asyncpg، جدول `memory.user_memory` معزول per-user) يناديها LiteLLM hook (`memory_hook.py`) عبر httpx؛ ذاكرة **صريحة (HITL)** بلا embeddings/vector. Mem0/RAG/المتجهات (هدف ADR-012) **مؤجّلة لـ L2** عند الحاجة. نفس النمط المعماري (hook → خدمة → Postgres) → قابلة للاستبدال بـ Mem0 لاحقاً دون تغيير العقد.
+**Consequences:** (+) أبسط، صفر embedding/VRAM إضافي، تحت سيطرتنا الكاملة، مُختبَرة end-to-end (خزّن/استرجع per-user). (−) نصون منطقاً يدوياً بسيطاً؛ لا استرجاع دلالي بعد. الترقية لـ Mem0/L2 تبقى مفتوحة.
+
+## ADR-014 — تفعيل الرؤية (Vision) عبر mmproj في llama-server
+**Status:** مقبول (قيد التنفيذ)
+**Context:** Gemma 4 E2B يدعم الصور معماريّاً لكنه نُشر نصّياً (بلا mmproj). بحث موثّق ([VISION_SETUP](../research/VISION_SETUP.md)) أكّد الإعداد والمزالق.
+**Decision:** تحميل `mmproj-F16.gguf` (من نفس مستودع الموديل) وإضافته لـ llama-server بـ `--mmproj` + `--no-mmproj-offload` (المُرمِّز على CPU لتوفير VRAM على 6GB) + `--image-max-tokens` منخفض + ctx معقول. تعريف الموديل بـ `supports_vision: True` في LiteLLM. الصور بصيغة OpenAI `image_url`/base64 عبر OWUI→LiteLLM→llama-server.
+**Consequences:** (+) دعم صور end-to-end بنفس العقد. (−) VRAM أضيق على 6GB (ذروة ترميز الصورة = المجهول الأكبر، مخفّفة بـ CPU projector + سقف توكنات)؛ قضايا llama.cpp معروفة (تطابق عائلة mmproj، `gemma4uv`، هشاشة مسار OWUI→LiteLLM) → استخدم أحدث صورة + اختبر فعلياً. مؤقّت على اللاب؛ مريح على GPU السحابة.

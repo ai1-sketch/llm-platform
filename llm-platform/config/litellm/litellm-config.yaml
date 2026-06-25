@@ -3,7 +3,7 @@
 # تبديل المحرّك/المزوّد لاحقاً = تعديل هذا الملف **فقط** (سطر واحد).
 
 model_list:
-  - model_name: company-chat               # اسم ثابت للعميل مهما تغيّر خلفه
+  - model_name: Sankari Chat               # اسم ثابت يراه المستخدم (محايد، يبقى مهما تغيّر المحرّك خلفه — R-ARCH-33)
     litellm_params:
       model: openai/gemma-4-e2b            # بادئة openai/ = عميل OpenAI-compatible
       api_base: http://llamacpp:8080/v1    # خدمة المحرّك على شبكة compose الداخلية
@@ -16,6 +16,7 @@ model_list:
 litellm_settings:
   drop_params: true
   json_logs: true        # تسجيل مهيكل JSON (R-ERR-14)
+  callbacks: ["custom_hook.proxy_handler_instance"]   # hook الذاكرة per-user (ADR-012)
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

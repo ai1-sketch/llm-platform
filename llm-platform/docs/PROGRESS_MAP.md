@@ -26,13 +26,17 @@
 - [x] **scaffolding + بداية P-01:** كُتبت ملفات الأساس (`pyproject.toml`, `.pre-commit-config.yaml`, `compose/docker-compose.yml`, `config/litellm/litellm-config.yaml`, `config/env/.env.example`, `.gitignore`) ومُرّت على لجنة مراجعة (4 عدسات + تحقّق ويب)؛ طُبِّقت 3 must (healthcheck بايثون بدل curl، إزالة بادئة `sk-`، إزالة فرض التغطية) + shoulds رخيصة.
 - [x] **محرّك Gemma 4 في الـ stack:** بعد تحقّق DevOps (gemma4 مدعوم بصورة `server-cuda` الرسمية)، أُضيفت خدمة `llamacpp` (GPU + الموديل عبر `MODEL_DIR`) وLiteLLM يشير للمحرّك المحلي ([ADR-011](DECISIONS.md)).
 - [x] **🎉 P-01 شغّال end-to-end (2026-06-24):** Docker Desktop + GPU passthrough (RTX 4050 داخل الحاوية) + 4 خدمات healthy + Gemma 4 محمّل على GPU (~2.4GB) + طلب نجح عبر البوّابة (`company-chat` → "2 + 2 equals 4"، مع reasoning). الواجهة على http://127.0.0.1:3000.
+- [x] **قرار الذاكرة + تحقّق الهوية:** مسح موسوعي ([MEMORY_LANDSCAPE](../research/MEMORY_LANDSCAPE.md)) → [ADR-012](DECISIONS.md) (Mem0 خلف hook + per-user + HITL + pgvector + Qwen3-Embedding). **أُثبت end-to-end** أن `ENABLE_FORWARD_USER_INFO_HEADERS` يمرّر `X-OpenWebUI-User-Id` للـ LiteLLM hook (مستخدم حقيقي UUID) — أساس العزل per-user. شرط أمني: البوّابة داخلية.
+- [x] **🧠 ذاكرة المرحلة 1 (L1) شغّالة end-to-end:** خدمة `memory` (FastAPI+asyncpg، جدول `memory.user_memory` معزول per-user، مُختبَرة: u2 لا يرى ذاكرة u1) + LiteLLM hook (`memory_hook.py`: يقرأ الهوية، يحقن الذاكرة في system، يخزّن عند "remember:"/"تذكّر:" = HITL، fail-open). اختبار حقيقي عبر OWUI: خزّن "favorite color teal" → استرجعه في محادثة منفصلة ✅. (L1 = صريح؛ بلا embedding/vector بعد.)
+- [x] **سدّ ثغرات التوثيق:** [ADR-013](DECISIONS.md) (تنفيذ L1 مخصّص بدل Mem0 لـ Phase 1)، [ADR-014](DECISIONS.md) + [VISION_SETUP](../research/VISION_SETUP.md) (قرار وبحث الرؤية)، وتحديث R-ARCH-31 (إضافة خدمة `memory`). الرينيم (company-chat→Sankari Chat، WEBUI_NAME) مطبّق. **تنبيه: شغل كثير غير محفوظ بـ git من بعد v2 → يلزم checkpoint v3.**
 
 ## 3. التالي مباشرةً (Next Up)
 > أمسك بنداً واحداً، نفّذه، ثم حدّث القسمين 2 و 3 (والقسم 1).
 
 1. [ ] **تقوية P-01:** استبدل master-key بـ virtual key للواجهة (`litellm /key/generate`)؛ ثبّت وسوم الصور (digests). [✓ تم ضبط max_tokens=2048 افتراضي في litellm-config — جواب كامل مؤكَّد.]
 2. [ ] **تأكيد P-05:** تحقّق أن لوغ JSON يُصدر `request_id` + كلفة، وحقل `service=litellm` (R-ERR-16).
-3. [ ] تنفيذ ما تبقّى من Phase 1 ثم التخطيط لـ Phase 2 (سحابة/vLLM عند الحاجة).
+3. [ ] **ذاكرة المرحلة 2:** ترقية للاسترجاع الدلالي (pgvector + Qwen3-Embedding، أو Mem0 auto-extraction) + RLS + واجهة عرض/حذف للمستخدم + أوامر `/memories` `/forget` + تثبيت إصدارات خدمة memory.
+4. [ ] التخطيط لـ Phase 2 للمنصّة (سحابة/vLLM عند الحاجة).
 
 ---
 

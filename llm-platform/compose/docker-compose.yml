@@ -39,6 +39,8 @@ services:
         condition: service_healthy
       llamacpp:
         condition: service_started            # يبدأ مع إقلاع المحرّك؛ retry يغطّي زمن تحميل الموديل
+      memory:
+        condition: service_healthy            # الذاكرة جاهزة قبل البوّابة
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY مفقود}   # fail-fast (R-ERR-02)
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?LITELLM_SALT_KEY مفقود}
@@ -47,6 +49,7 @@ services:
       LITELLM_LOG: ${LITELLM_LOG:-INFO}                              # مستوى السجل (R-ERR-17)
     volumes:
       - ../config/litellm/litellm-config.yaml:/app/config.yaml:ro
+      - ../config/litellm/memory_hook.py:/app/custom_hook.py:ro   # hook الذاكرة per-user (ADR-012)
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     networks: [internal]
     healthcheck:
@@ -68,6 +71,8 @@ services:
       OPENAI_API_KEY: ${OPENWEBUI_LITELLM_KEY:?OPENWEBUI_LITELLM_KEY مفقود}   # virtual key من litellm
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY مفقود}
       GLOBAL_LOG_LEVEL: ${WEBUI_LOG_LEVEL:-INFO}              # مستوى السجل (R-ERR-17)
+      ENABLE_FORWARD_USER_INFO_HEADERS: "true"               # يمرّر X-OpenWebUI-User-* للبوّابة (للذاكرة per-user)
+      WEBUI_NAME: ${WEBUI_NAME:-Sankari Chat}                 # اسم التطبيق المعروض
     volumes:
       - openwebui-data:/app/backend/data
     ports:
@@ -96,6 +101,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  memory:                                    # خدمة الذاكرة per-user (L1) — ADR-012 (يعدّل قائمة R-ARCH-31)
+    build: ../services/memory
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MEMORY_DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}@postgres:5432/litellm
+    networks: [internal]                      # داخلية فقط (غير مكشوفة)
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8088/health').status==200 else 1)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
 networks:
   internal:
