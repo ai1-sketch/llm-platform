@@ -104,3 +104,15 @@
 **Context:** Gemma 4 E2B يدعم الصور معماريّاً لكنه نُشر نصّياً (بلا mmproj). بحث موثّق ([VISION_SETUP](../research/VISION_SETUP.md)) أكّد الإعداد والمزالق.
 **Decision:** تحميل `mmproj-F16.gguf` (من نفس مستودع الموديل) وإضافته لـ llama-server بـ `--mmproj` + `--no-mmproj-offload` (المُرمِّز على CPU لتوفير VRAM على 6GB) + `--image-max-tokens` منخفض + ctx معقول. تعريف الموديل بـ `supports_vision: True` في LiteLLM. الصور بصيغة OpenAI `image_url`/base64 عبر OWUI→LiteLLM→llama-server.
 **Consequences:** (+) دعم صور end-to-end بنفس العقد. (−) VRAM أضيق على 6GB (ذروة ترميز الصورة = المجهول الأكبر، مخفّفة بـ CPU projector + سقف توكنات)؛ قضايا llama.cpp معروفة (تطابق عائلة mmproj، `gemma4uv`، هشاشة مسار OWUI→LiteLLM) → استخدم أحدث صورة + اختبر فعلياً. مؤقّت على اللاب؛ مريح على GPU السحابة.
+
+## ADR-015 — bootstrap مخطط الذاكرة تلقائياً عند الإقلاع (تصحيح ثغرة DoD)
+**Status:** مقبول
+**Context:** تدقيق (2026-06-25) كشف أن خدمة `memory` تستعلم جدول `memory.user_memory` دون أن يُنشئه أيّ كود — كان يُنشأ **يدوياً** وقت الاختبار، فيفشل صامتاً على volume نظيف (الـ hook fail-open يخفيه). انتهاك معيار "تمّ" ([CONSTITUTION](CONSTITUTION.md) §3: "بلا خطوات يدوية خفيّة")، رغم وسم PROGRESS_MAP "شغّال end-to-end".
+**Decision:** يُنفَّذ DDL idempotent (`CREATE SCHEMA/TABLE/INDEX IF NOT EXISTS`) داخل lifespan خدمة `memory` عند الإقلاع (لا عبر init.sql مُركَّب على postgres، لئلا يعتمد على ترتيب/حالة الـ volume). فشل الـ DDL = فشل إقلاع صاخب (لا يُبتلع).
+**Consequences:** (+) الذاكرة تعمل على `docker compose up` نظيف بلا خطوة يدوية؛ تحت سيطرة الخدمة. **مُتحقَّق حيّاً:** إسقاط الـ schema ثم الإقلاع يعيد إنشاءه + سطر `SCHEMA_READY`. (−) الخدمة تملك صلاحية DDL على مخططها المعزول (مقبول).
+
+## ADR-016 — اعتماد علامة المنتج "Sankari Chat" كمعرّف الموديل (توضيح R-ARCH-33)
+**Status:** مقبول
+**Context:** الرينيم company-chat→"Sankari Chat" (قرار المالك، علامة المنتج) لمس معرّف الموديل في `model_list` (وهو عقد للعميل) دون ADR، وتعارض ظاهرياً مع مثال R-ARCH-33 ("اسم منطقي حيادي مثل `local-chat`")، وترك تعليقات متناقضة داخل `litellm-config.yaml`.
+**Decision:** يُعتمد "Sankari Chat" معرّفاً للموديل يراه العميل/المستخدم. **جوهر R-ARCH-33 = الحياديّة تجاه المحرّك** (ألّا يُسرّب الاسم المحرّك/الموديل كي يبقى التبديل شفّافاً)، و"Sankari Chat" يحقّقه (لا يذكر gemma/llamacpp، يثبت عند أي تبديل خلفه). مثال `local-chat` استرشادي لا حصري. اسم عرض التطبيق يبقى في `WEBUI_NAME`.
+**Consequences:** (+) علامة موحّدة للمستخدم مع بقاء حياديّة المحرّك (جوهر R-ARCH-33). (−) معرّف الموديل عقدٌ للعملاء البرمجيين → يُثبَّت ولا يُغيَّر إلا بـ ADR. R-ARCH-33 يُحدَّث بإشارة لهذا التوضيح.

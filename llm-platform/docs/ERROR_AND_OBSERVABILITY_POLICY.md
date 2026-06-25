@@ -2,7 +2,7 @@
 
 > سياسة الأخطاء والرصد لمنصّة `llm-platform`. تُقرأ مع [CONSTITUTION](CONSTITUTION.md) · [ARCHITECTURE_RULES](ARCHITECTURE_RULES.md) · [DECISIONS](DECISIONS.md) · [PROGRESS_MAP](PROGRESS_MAP.md).
 >
-> **الحالة:** مسوّدة v1 · **Owner:** SRE · **النطاق (Phase 1):** أبسط نسخة — managed model خلف LiteLLM + Open WebUI (ADR-006). لا inference engine محلي بالضرورة.
+> **الحالة:** مسوّدة v1 · **Owner:** SRE · **النطاق (Phase 1):** المنصّة الفعلية — Gemma 4 محلي (llamacpp/GPU) خلف LiteLLM + Open WebUI + خدمة memory ([ADR-010](DECISIONS.md)/011، يستبدلان ADR-006).
 
 العقيدة المركزية: **"الخطأ يبلّغ عن نفسه" (errors that announce themselves).** كل فشل يخبرنا فوراً: **ماذا حدث، في أي طلب، وكيف نصلحه**. الفشل صاخب وواضح، لا صامت ولا غامض.
 
@@ -92,7 +92,7 @@ ERROR: request failed
 
 - **R-ERR-14** كل السجلات **JSON سطر واحد** (لا نص حر متعدّد الأسطر). الحقول الأساسية: `timestamp` (UTC ISO-8601), `level`, `service`, `request_id`, `code` (إن وُجد), `message`. يُضبط في الخدمات الجاهزة عبر config.
 - **R-ERR-15** **Correlation/Request ID إلزامي:** يُولَّد عند أول دخول (gateway)، يُمرَّر لكل طبقة لاحقة عبر header `X-Request-ID`، ويظهر في كل سطر log للطلب. هو الخيط الذي يربط الطلب عبر الطبقات.
-- **R-ERR-16** قيمة حقل `service` تطابق **اسم خدمة Docker** المعتمد في `docker-compose.yml` (R-ARCH-31): `open-webui`, `litellm`, `postgres`. هذا شرط نجاح "grep واحد على `request_id` عبر الطبقات" (R-ERR-19).
+- **R-ERR-16** قيمة حقل `service` تطابق **اسم خدمة Docker** المعتمد في `docker-compose.yml` (R-ARCH-31): `open-webui`, `litellm`, `llamacpp`, `postgres`, `memory`. هذا شرط نجاح "grep واحد على `request_id` عبر الطبقات" (R-ERR-19). كودنا الحالي (`memory_hook.py` بـ service=litellm، `memory/app.py` بـ service=memory) يلتزمه.
 - **R-ERR-17** المستويات: `DEBUG`, `INFO` (افتراضي), `WARN`, `ERROR` (فشل طلب), `CRITICAL` (فشل يهدّد الخدمة). يُضبط عبر config.
 - **R-ERR-18** ممنوع طباعة الأسرار/محتوى المستخدم الحسّاس في السجل؛ المفاتيح تُقنَّع (`sk-...abcd`). السجل يخرج إلى `stdout`/`stderr` فقط (عقد الحاويات)، لا إلى ملفات داخل الحاوية.
 

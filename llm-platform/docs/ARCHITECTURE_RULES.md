@@ -16,13 +16,17 @@
 llm-platform/
 ├── PROJECT_BLUEPRINT.md     # المخطّط الهندسي المرجعي (استثناء جذر مُصرّح به — R-ARCH-04)
 ├── compose/
-│   └── docker-compose.yml    # تعريف الخدمات الأربع فقط (open-webui, litellm, llamacpp, postgres)
+│   └── docker-compose.yml    # تعريف الخدمات الخمس (open-webui, litellm, llamacpp, postgres, memory)
 ├── config/                  # كل الإعداد الخارجي (لا أسرار قيمية)
 │   ├── litellm/
-│   │   └── litellm-config.yaml       # model_list + routing — نقطة التبديل الوحيدة
+│   │   ├── litellm-config.yaml       # model_list + routing — نقطة التبديل الوحيدة
+│   │   └── memory_hook.py            # hook الذاكرة per-user (يعمل داخل عملية litellm)
 │   └── env/
 │       └── .env.example              # قالب المتغيّرات (placeholders فقط، بلا قيم حقيقية)
-├── scripts/                 # سكربتات تشغيل/صيانة (bootstrap, healthcheck, backup)
+├── services/                # كود خدماتنا المحاواة (أُنشئ بـ ADR-012/013)
+│   └── memory/              # خدمة الذاكرة per-user (FastAPI + asyncpg)
+├── research/                # أبحاث داعمة للقرارات (MEMORY_LANDSCAPE, VISION_SETUP) — معفاة من حدّ 180 سطر
+├── scripts/                 # سكربتات تشغيل/صيانة (عند الحاجة)
 ├── docs/                    # كل وثائق الحوكمة (هذا الملف وإخوته)
 │   ├── CONSTITUTION.md
 │   ├── ARCHITECTURE_RULES.md
@@ -42,7 +46,7 @@ llm-platform/
 - **R-ARCH-04** — كل وثائق الحوكمة تحت `docs/` فقط؛ الروابط المتبادلة بينها **نسبية ومجاورة** (`./X.md`). فحص: link-checker لا يجد رابطاً معطّلاً (dangling).
 - **R-ARCH-05** — أي ملف وثيقة هندسية **< 180 سطراً** (حدّ صارم؛ CI يفشل عند 180 فأكثر). تجاوز ذلك يستوجب التقسيم. الإيجاز فضيلة.
 
-> مجلدات الطوابق العليا (`services/`, `infra/`) **لا تُنشأ الآن** (YAGNI). تُنشأ عند وجود حاجة فعلية، بقرار ADR.
+> `services/` أُنشئ فعلاً (خدمة `memory`، [ADR-012](DECISIONS.md)/[ADR-013](DECISIONS.md))؛ `infra/` **لا يُنشأ الآن** (YAGNI، يُنشأ بقرار ADR عند الحاجة).
 
 ---
 
@@ -78,7 +82,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
 - **R-ARCH-30** — **الملفات والمجلدات:** `kebab-case` (مثل `litellm-config.yaml`). الاستثناء الوحيد: الوثائق بصيغة `SCREAMING_SNAKE_CASE.md`.
 - **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `llamacpp`, `postgres`, `memory` (أُضيفت بـ [ADR-012](DECISIONS.md)/[ADR-013](DECISIONS.md)). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة. (مثال البلوبرنت §10.2 يستخدم حالياً `engine/gateway/webui/db` ويجب تصحيحه لمطابقة هذه القاعدة — يُحسم بـ ADR.)
 - **R-ARCH-32** — **متغيّرات البيئة:** `SCREAMING_SNAKE_CASE` ببادئة المكوّن: `LITELLM_*`, `WEBUI_*`, `DATABASE_URL`. تتطابق حرفياً مع `config/env/.env.example`.
-- **R-ARCH-33** — **أسماء الموديلات في `model_list`:** اسم منطقي حيادي (`local-chat`, `embed-default`)، لا اسم محرّك أو مسار ملف — كي يبقى التبديل خلفه شفّافاً للعميل.
+- **R-ARCH-33** — **أسماء الموديلات في `model_list`:** اسم **حياديّ تجاه المحرّك** (لا اسم محرّك ولا مسار ملف) كي يبقى التبديل خلفه شفّافاً للعميل. مثال منطقي: `local-chat`, `embed-default`؛ ويجوز اسم علامة منتج حياديّ تجاه المحرّك مثل `Sankari Chat` ([ADR-016](DECISIONS.md)). فحص: الاسم لا يذكر المحرّك/الموديل/المسار.
 - **R-ARCH-34** — حقل `service` في كل log/خطأ (R-ERR-05) **يطابق حرفياً اسم خدمة Docker** المعتمدة في R-ARCH-31 (`litellm`، لا `litellm-gateway`)؛ كي يعمل تتبّع `request_id` عبر الطبقات بـ grep واحد (R-ERR-25).
 
 ---
