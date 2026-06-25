@@ -1,5 +1,5 @@
 # llm-platform CI — مرآة فحوص pre-commit (ADR-008). يفرض الجودة على كل push/PR.
-# جذر المستودع = QEWN؛ نحصر فحوص الجودة في مجلّد llm-platform (نطاق ADR-008).
+# المستودع = المنصّة (الجذر، ADR-018)؛ legacy/ مستثنى عبر ruff extend-exclude (ADR-008).
 name: ci
 
 on:
@@ -31,5 +31,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Gitleaks (secret scan — R-ARCH-20)
-        uses: gitleaks/gitleaks-action@v2
+      # مسح gitleaks مباشر لكامل التاريخ بدل gitleaks-action
+      # (الـ action يحسب نطاق <root>^..HEAD ويفشل على commit الجذر في أوّل دفعة لمستودع جديد).
+      - name: Install gitleaks (pinned v8.30.1)
+        run: curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz | sudo tar -xz -C /usr/local/bin gitleaks
+      - name: Gitleaks (full-history secret scan — R-ARCH-20)
+        run: gitleaks detect --source . --redact -v
