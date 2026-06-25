@@ -19,6 +19,7 @@ from arabic import normalize_ar
 from embeddings import EMBEDDING_MODEL_VERSION, embed_one, to_pgvector
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from retrieve import retrieve
 from schema import SCHEMA_DDL
 
 
@@ -92,6 +93,12 @@ class AddReq(BaseModel):
     content: str = Field(min_length=1)
 
 
+class RetrieveReq(BaseModel):
+    user_id: str = Field(min_length=1)
+    query: str = Field(min_length=1)
+    top_k: int = 8
+
+
 def _require_pool() -> "asyncpg.Pool":
     """يضمن تهيئة الـ pool (يُفشل بوضوح لو نودي قبل lifespan) — ويُرضي فحص الأنواع."""
     if pool is None:
@@ -162,3 +169,20 @@ async def delete_one(mem_id: int, user_id: str = Query(min_length=1)):
 async def clear_all(user_id: str = Query(min_length=1)):
     res = await _require_pool().execute("DELETE FROM memory.user_memory WHERE user_id=$1", user_id)
     return {"result": res}
+
+
+@app.post("/v1/retrieve")
+async def retrieve_endpoint(req: RetrieveReq):
+    """استرجاع هجين (dense+lexical+RRF) — مرشّحون مُرتّبون. يستهلكه الـ Orchestrator لاحقاً (M4)."""
+    results = await retrieve(_require_pool(), req.user_id, req.query, top_k=req.top_k)
+    return {
+        "results": [
+            {
+                "item_id": str(m.item_id),
+                "source_type": m.source_type,
+                "text": m.text,
+                "score": round(score, 6),
+            }
+            for m, score in results
+        ]
+    }
