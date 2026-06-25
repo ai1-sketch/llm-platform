@@ -5,12 +5,12 @@
 # شرط مسبق: Docker Desktop (WSL2 backend) + تعريف NVIDIA لويندوز يدعم WSL2 GPU.
 #   تحقّق أوّلاً: docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
 # قواعد: litellm/llamacpp غير مكشوفة (R-ARCH-24) · أسرار من env (R-ARCH-20) · أسماء حياديّة (R-ARCH-31).
-# ⚠️ تحقّق عند أوّل تشغيل: docker exec llamacpp nvidia-smi · لوغ llamacpp بلا "unknown architecture" · ثبّت وسوم الصور.
+# ✓ الصور مثبّتة بـ digest (إعادة الإنتاج). للترقية: حدّث الـ digest يدوياً بعد سحب الوسم + اختبار.
 name: llm-platform
 
 services:
   llamacpp:                                  # المحرّك: llama.cpp server (CUDA) يخدم Gemma 4 على GPU (ADR-011)
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda   # تُبنى يومياً من master وتدعم gemma4؛ ثبّت digest للإنتاج
+    image: ghcr.io/ggml-org/llama.cpp@sha256:0a8757369e1e3338386883b23bf1bd5dde46c9060d852a798207fe5fe51e6965   # server-cuda مُثبَّت بـ digest (2026-06-25، يدعم gemma4)
     restart: unless-stopped
     volumes:
       - "${MODEL_DIR:-../models-gemma4}:/models:ro"   # مجلّد GGUF على المضيف (نسبةً لـ compose/ في جذر المستودع) أو مسار مطلق
@@ -35,7 +35,7 @@ services:
     # (عند أوّل تشغيل: docker exec llamacpp sh -c "which curl wget python3" لتقرير healthcheck لاحق على /health.)
 
   litellm:                                   # البوّابة (R-ARCH-31)
-    image: ghcr.io/berriai/litellm:main-stable   # ثبّت وسماً محدّداً عند التثبيت
+    image: ghcr.io/berriai/litellm@sha256:8f3517476b8293ccc1c3b0da7940d8dabbfe64b013454113f5a3cb68265c439b   # main-stable مُثبَّت بـ digest (2026-06-25)
     restart: unless-stopped
     depends_on:
       postgres:
@@ -64,7 +64,7 @@ services:
       start_period: 40s
 
   open-webui:                                # الواجهة — نقطة الدخول الوحيدة المكشوفة
-    image: ghcr.io/open-webui/open-webui:main    # ثبّت وسماً محدّداً عند التثبيت
+    image: ghcr.io/open-webui/open-webui@sha256:7f1b0a1a50cfbac23da3b16f96bc968fd757b26dc9e54e93813d61768ea9184e   # main مُثبَّت بـ digest (2026-06-25)
     restart: unless-stopped
     depends_on:
       litellm:
@@ -91,7 +91,7 @@ services:
       start_period: 40s
 
   postgres:                                  # حالة litellm (مفاتيح/كلفة) — يبقى بسجله الافتراضي (استثناء موثّق لـ R-ERR-14؛ ليس مسار طلبات)
-    image: postgres:16-alpine
+    image: postgres@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50   # postgres:16-alpine مُثبَّت بـ digest (2026-06-25)
     restart: unless-stopped
     environment:
       POSTGRES_USER: litellm
