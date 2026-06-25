@@ -1,26 +1,27 @@
 # llm-platform — pre-commit (مرآة فحوص CI، ADR-008). تفعيل: pre-commit install
-# ⚠️ ثبّت كل `rev` على وسم مستقر **قبل أوّل استخدام** (حتمية — ADR-008). القيم أدناه placeholder.
+# الإصدارات مثبَّتة (حتمية — ADR-008). مصدر الحقيقة للفرض = CI (.github/workflows/ci.yml).
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: PIN-AT-INSTALL
+    rev: v0.12.0
     hooks:
       - id: ruff-format          # التنسيق (حَتمي)
       - id: ruff                 # الـ lint — بوّابة (يفشل عند E,F,C90,PLR...)
         args: ["--fix"]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: PIN-AT-INSTALL
+    rev: v2.1.0
     hooks:
       - id: mypy
         args: ["--config-file", "pyproject.toml"]
+        files: ^(config/litellm/memory_hook\.py|services/memory/app\.py)$   # كودنا فقط (لا الاختبارات)
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: PIN-AT-INSTALL
+    rev: v8.30.1
     hooks:
       - id: gitleaks             # كشف الأسرار — بوّابة صلبة (R-ARCH-20)
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: PIN-AT-INSTALL
+    rev: v6.0.0
     hooks:
       - id: check-yaml
       - id: end-of-file-fixer

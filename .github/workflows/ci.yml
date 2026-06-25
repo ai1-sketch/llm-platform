@@ -1,0 +1,38 @@
+# llm-platform CI — مرآة فحوص pre-commit (ADR-008). يفرض الجودة على كل push/PR.
+# جذر المستودع = QEWN؛ نحصر فحوص الجودة في مجلّد llm-platform (نطاق ADR-008).
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: llm-platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned tools (asyncpg/litellm مُكفّآن في conftest)
+        run: pip install ruff==0.12.0 mypy==2.1.0 pytest fastapi httpx
+      - name: Ruff lint
+        run: ruff check .
+      - name: Ruff format check
+        run: ruff format --check .
+      - name: Mypy (our code only)
+        run: mypy --config-file pyproject.toml config/litellm/memory_hook.py services/memory/app.py
+      - name: Pytest
+        run: pytest -q
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks (secret scan — R-ARCH-20)
+        uses: gitleaks/gitleaks-action@v2

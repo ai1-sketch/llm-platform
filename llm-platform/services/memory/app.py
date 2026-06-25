@@ -100,6 +100,13 @@ class AddReq(BaseModel):
     content: str = Field(min_length=1)
 
 
+def _require_pool() -> "asyncpg.Pool":
+    """يضمن تهيئة الـ pool (يُفشل بوضوح لو نودي قبل lifespan) — ويُرضي فحص الأنواع."""
+    if pool is None:
+        raise RuntimeError("pool not initialized")
+    return pool
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}
@@ -107,7 +114,7 @@ async def health():
 
 @app.get("/v1/memories")
 async def list_memories(user_id: str = Query(min_length=1), limit: int = 50):
-    rows = await pool.fetch(
+    rows = await _require_pool().fetch(
         "SELECT id, content FROM memory.user_memory WHERE user_id=$1 "
         "ORDER BY created_at DESC LIMIT $2",
         user_id,
@@ -121,7 +128,7 @@ async def add_memory(req: AddReq):
     content = req.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="content فارغ بعد التشذيب")
-    row = await pool.fetchrow(
+    row = await _require_pool().fetchrow(
         "INSERT INTO memory.user_memory(user_id, content) VALUES($1, $2) RETURNING id",
         req.user_id,
         content,
@@ -131,7 +138,7 @@ async def add_memory(req: AddReq):
 
 @app.delete("/v1/memories/{mem_id}")
 async def delete_one(mem_id: int, user_id: str = Query(min_length=1)):
-    res = await pool.execute(
+    res = await _require_pool().execute(
         "DELETE FROM memory.user_memory WHERE id=$1 AND user_id=$2", mem_id, user_id
     )
     return {"result": res}
@@ -139,5 +146,5 @@ async def delete_one(mem_id: int, user_id: str = Query(min_length=1)):
 
 @app.delete("/v1/memories")
 async def clear_all(user_id: str = Query(min_length=1)):
-    res = await pool.execute("DELETE FROM memory.user_memory WHERE user_id=$1", user_id)
+    res = await _require_pool().execute("DELETE FROM memory.user_memory WHERE user_id=$1", user_id)
     return {"result": res}
