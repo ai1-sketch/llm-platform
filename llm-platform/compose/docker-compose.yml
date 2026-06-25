@@ -16,9 +16,12 @@ services:
       - "${MODEL_DIR:-../../models-gemma4}:/models:ro"   # مجلّد GGUF على المضيف (نسبةً لـ compose/؛ افتراضي = sandbox الحالي)
     command: >
       -m /models/${MODEL_FILE:-gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf}
+      --mmproj /models/${MMPROJ_FILE:-mmproj-F16.gguf}
+      --no-mmproj-offload
+      --image-max-tokens ${IMAGE_MAX_TOKENS:-256}
       --host 0.0.0.0 --port 8080
       --n-gpu-layers ${N_GPU_LAYERS:-999}
-      --ctx-size ${CTX_SIZE:-8192}
+      --ctx-size ${CTX_SIZE:-4096}
       --api-key ${LLAMACPP_API_KEY:?LLAMACPP_API_KEY مفقود}
     deploy:
       resources:

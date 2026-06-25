@@ -100,7 +100,7 @@
 **Consequences:** (+) أبسط، صفر embedding/VRAM إضافي، تحت سيطرتنا الكاملة، مُختبَرة end-to-end (خزّن/استرجع per-user). (−) نصون منطقاً يدوياً بسيطاً؛ لا استرجاع دلالي بعد. الترقية لـ Mem0/L2 تبقى مفتوحة.
 
 ## ADR-014 — تفعيل الرؤية (Vision) عبر mmproj في llama-server
-**Status:** مقبول (قيد التنفيذ)
+**Status:** مقبول ✅ مُنفَّذ ومُتحقَّق حيّاً (2026-06-25 — الموديل أجاب "أزرق" على صورة اختبار عبر العقد)
 **Context:** Gemma 4 E2B يدعم الصور معماريّاً لكنه نُشر نصّياً (بلا mmproj). بحث موثّق ([VISION_SETUP](../research/VISION_SETUP.md)) أكّد الإعداد والمزالق.
 **Decision:** تحميل `mmproj-F16.gguf` (من نفس مستودع الموديل) وإضافته لـ llama-server بـ `--mmproj` + `--no-mmproj-offload` (المُرمِّز على CPU لتوفير VRAM على 6GB) + `--image-max-tokens` منخفض + ctx معقول. تعريف الموديل بـ `supports_vision: True` في LiteLLM. الصور بصيغة OpenAI `image_url`/base64 عبر OWUI→LiteLLM→llama-server.
 **Consequences:** (+) دعم صور end-to-end بنفس العقد. (−) VRAM أضيق على 6GB (ذروة ترميز الصورة = المجهول الأكبر، مخفّفة بـ CPU projector + سقف توكنات)؛ قضايا llama.cpp معروفة (تطابق عائلة mmproj، `gemma4uv`، هشاشة مسار OWUI→LiteLLM) → استخدم أحدث صورة + اختبر فعلياً. مؤقّت على اللاب؛ مريح على GPU السحابة.

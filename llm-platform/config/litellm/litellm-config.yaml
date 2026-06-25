@@ -9,6 +9,8 @@ model_list:
       api_base: http://llamacpp:8080/v1    # خدمة المحرّك على شبكة compose الداخلية
       api_key: os.environ/LLAMACPP_API_KEY # يطابق --api-key للمحرّك (داخلي)
       max_tokens: 2048                     # ميزانية افتراضية تكفي تفكير Gemma 4 + الجواب (تُطبَّق عند إغفال العميل)
+    model_info:
+      supports_vision: true                # يسمح بتمرير الصور (image_url/base64) عبر العقد إلى المحرّك (ADR-014)
   # للتبديل لـ managed لاحقاً: علّق ما فوق وفعّل أحد البدائل (أبقِ model_name = Sankari Chat ليبقى التبديل شفّافاً للعميل):
   #   model: anthropic/<model>   api_key: os.environ/ANTHROPIC_API_KEY
   #   model: openai/<model>      api_key: os.environ/OPENAI_API_KEY

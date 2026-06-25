@@ -9,7 +9,7 @@
 ---
 
 ## 1. الحالة الآن (سطر واحد)
-**P-01 شغّال end-to-end ✅ + رصد P-05 مغلق ✅.** 5 خدمات healthy (Open WebUI → LiteLLM → llamacpp/Gemma 4 GPU + postgres + memory). الموديل المعروض = **Sankari Chat**. الذاكرة per-user (L1) تعمل من schema يُنشأ تلقائياً ([ADR-015](DECISIONS.md))، و`request_id`+الكلفة يظهران بـ JSON عبر الطبقات (مُتحقَّق بـ grep واحد، R-ERR-19). الواجهة على http://127.0.0.1:3000. التالي: تقوية (virtual key، تثبيت الوسوم) + تفعيل الرؤية ([ADR-014](DECISIONS.md)).
+**P-01 شغّال end-to-end ✅ + رصد P-05 مغلق ✅.** 5 خدمات healthy (Open WebUI → LiteLLM → llamacpp/Gemma 4 GPU + postgres + memory). الموديل المعروض = **Sankari Chat**. الذاكرة per-user (L1) تعمل من schema يُنشأ تلقائياً ([ADR-015](DECISIONS.md))، و`request_id`+الكلفة يظهران بـ JSON عبر الطبقات (مُتحقَّق بـ grep واحد، R-ERR-19). **والرؤية تعمل ✅** ([ADR-014](DECISIONS.md): mmproj على CPU + ctx 4096). الواجهة على http://127.0.0.1:3000. التالي: تقوية (virtual key، تثبيت الوسوم) + ذاكرة Phase 2.
 
 ## 2. أُنجِز مؤخّراً
 - [x] إثبات جدوى محلي (Qwen3 / Gemma عبر llama.cpp).
@@ -30,14 +30,14 @@
 - [x] **🧠 ذاكرة المرحلة 1 (L1) شغّالة end-to-end:** خدمة `memory` (FastAPI+asyncpg، جدول `memory.user_memory` معزول per-user، مُختبَرة: u2 لا يرى ذاكرة u1) + LiteLLM hook (`memory_hook.py`: يقرأ الهوية، يحقن الذاكرة في system، يخزّن عند "remember:"/"تذكّر:" = HITL، fail-open). اختبار حقيقي عبر OWUI: خزّن "favorite color teal" → استرجعه في محادثة منفصلة ✅. (L1 = صريح؛ بلا embedding/vector بعد.)
 - [x] **سدّ ثغرات التوثيق:** [ADR-013](DECISIONS.md) (تنفيذ L1 مخصّص بدل Mem0 لـ Phase 1)، [ADR-014](DECISIONS.md) + [VISION_SETUP](../research/VISION_SETUP.md) (قرار وبحث الرؤية)، وتحديث R-ARCH-31 (إضافة خدمة `memory`). الرينيم (company-chat→Sankari Chat، WEBUI_NAME) مطبّق. **checkpoint v3 محفوظ** (commit `7898e1f`، tag `v3-memory-l1`).
 - [x] **🔍 تدقيق اتساق + إصلاح ثغرات (2026-06-25، workflow متعدّد الوكلاء — 7 وكلاء):** كشف وأُصلح بدليل ملموس وتحقّق حيّ: **(1) حرج** — جدول `memory.user_memory` لم يكن يُنشئه أيّ كود (يفشل صامتاً على volume نظيف، رغم وسم "شغّال") → bootstrap idempotent في lifespan ([ADR-015](DECISIONS.md))، مُتحقَّق بإسقاط الـ schema وإعادة الإقلاع. **(2) P-05 مغلق** — `request_id` (litellm_call_id) يُمرَّر litellm→memory + سطر كلفة per-request + تسجيل JSON مهيكل في كودنا (`memory_hook.py` + `memory/app.py`)؛ **نفس المعرّف عبر الطبقات** (R-ERR-15/16/19، مُتحقَّق بـ grep حيّ). **(3)** اسم الموديل علامة حياديّة ([ADR-016](DECISIONS.md)) + تصحيح تعليقات متناقضة. **(4)** تحديث README (كان "ما قبل الكود/managed/3 خدمات")، وتعليقات compose/ARCHITECTURE_RULES (5 خدمات + `services/`)، وملاحظة CTX للرؤية.
+- [x] **👁️ تفعيل الرؤية (2026-06-25، [ADR-014](DECISIONS.md)):** وُصل `mmproj-F16.gguf` لـ llamacpp (`--mmproj` + `--no-mmproj-offload` المُسقِط على CPU + `--image-max-tokens 256`) + `supports_vision: true` في litellm + ctx=4096 (آمن على 6GB). الأعلام مُتحقَّقة ضد الـ binary الفعلي. **مُتحقَّق حيّاً:** الموديل أجاب "أزرق" على صورة مربّع أزرق عبر OWUI→LiteLLM→llama-server؛ VRAM ~3.1–3.3GB/6GB (مريح)، بلا OOM ولا `n_embd mismatch`.
 
 ## 3. التالي مباشرةً (Next Up)
 > أمسك بنداً واحداً، نفّذه، ثم حدّث القسمين 2 و 3 (والقسم 1).
 
-1. [ ] **تقوية P-01:** استبدل master-key بـ virtual key للواجهة (`litellm /key/generate`)؛ ثبّت وسوم الصور (digests). [✓ max_tokens=2048؛ ✓ رصد P-05 مغلق ومُتحقَّق حيّاً.]
-2. [ ] **تفعيل الرؤية ([ADR-014](DECISIONS.md)):** وصل `mmproj-F16.gguf` لـ llamacpp (`--mmproj` + `--no-mmproj-offload` + `--image-max-tokens`) + `supports_vision: True` في litellm + خفض ctx إلى 4096، واختبر بصورة فعلية مع مراقبة VRAM.
-3. [ ] **ذاكرة المرحلة 2:** ترقية للاسترجاع الدلالي (pgvector + Qwen3-Embedding، أو Mem0 auto-extraction) + RLS + واجهة عرض/حذف للمستخدم + أوامر `/memories` `/forget` + تثبيت إصدارات خدمة memory.
-4. [ ] التخطيط لـ Phase 2 للمنصّة (سحابة/vLLM عند الحاجة).
+1. [ ] **تقوية P-01:** استبدل master-key بـ virtual key للواجهة (`litellm /key/generate`)؛ ثبّت وسوم الصور (digests). [✓ max_tokens=2048؛ ✓ رصد P-05 مغلق؛ ✓ الرؤية مفعّلة ومُختبَرة (ADR-014).]
+2. [ ] **ذاكرة المرحلة 2:** ترقية للاسترجاع الدلالي (pgvector + Qwen3-Embedding، أو Mem0 auto-extraction) + RLS + واجهة عرض/حذف للمستخدم + أوامر `/memories` `/forget` + تثبيت إصدارات خدمة memory.
+3. [ ] التخطيط لـ Phase 2 للمنصّة (سحابة/vLLM عند الحاجة).
 
 ---
 
