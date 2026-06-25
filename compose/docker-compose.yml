@@ -1,5 +1,5 @@
 # llm-platform — P-01 stack (ADR-005/010/011). 5 خدمات: open-webui → litellm → llamacpp (Gemma 4، GPU) + postgres + memory (ذاكرة per-user، ADR-012/013).
-# التشغيل (من جذر llm-platform):
+# التشغيل (من جذر المستودع):
 #   cp config/env/.env.example config/env/.env   # ثم املأ القيم
 #   docker compose --env-file config/env/.env -f compose/docker-compose.yml up -d
 # شرط مسبق: Docker Desktop (WSL2 backend) + تعريف NVIDIA لويندوز يدعم WSL2 GPU.
@@ -13,7 +13,7 @@ services:
     image: ghcr.io/ggml-org/llama.cpp:server-cuda   # تُبنى يومياً من master وتدعم gemma4؛ ثبّت digest للإنتاج
     restart: unless-stopped
     volumes:
-      - "${MODEL_DIR:-../../models-gemma4}:/models:ro"   # مجلّد GGUF على المضيف (نسبةً لـ compose/؛ افتراضي = sandbox الحالي)
+      - "${MODEL_DIR:-../models-gemma4}:/models:ro"   # مجلّد GGUF على المضيف (نسبةً لـ compose/ في جذر المستودع) أو مسار مطلق
     command: >
       -m /models/${MODEL_FILE:-gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf}
       --mmproj /models/${MMPROJ_FILE:-mmproj-F16.gguf}

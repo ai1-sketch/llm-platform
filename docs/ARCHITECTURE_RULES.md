@@ -13,36 +13,38 @@
 ## 1. هيكل المستودع (Repo Layout)
 
 ```text
-llm-platform/
-├── PROJECT_BLUEPRINT.md     # المخطّط الهندسي المرجعي (استثناء جذر مُصرّح به — R-ARCH-04)
+<repo-root>  (= المنصّة؛ رُقِّيت من llm-platform/ — ADR-018)
+├── CLAUDE.md                # عقد المساعد (auto-loaded)
+├── PROJECT_BLUEPRINT.md     # المخطّط الهندسي المرجعي
+├── README.md                # مدخل بشري + خريطة الحوكمة
+├── pyproject.toml           # أدوات الجودة (Ruff/Mypy/pytest — ADR-008)
+├── .pre-commit-config.yaml  # مرآة فحوص CI
+├── .gitignore
+├── .github/workflows/ci.yml # بوّابة CI (ruff + mypy + pytest + gitleaks)
 ├── compose/
-│   └── docker-compose.yml    # تعريف الخدمات الخمس (open-webui, litellm, llamacpp, postgres, memory)
+│   └── docker-compose.yml   # تعريف الخدمات الخمس (open-webui, litellm, llamacpp, postgres, memory)
 ├── config/                  # كل الإعداد الخارجي (لا أسرار قيمية)
 │   ├── litellm/
-│   │   ├── litellm-config.yaml       # model_list + routing — نقطة التبديل الوحيدة
-│   │   └── memory_hook.py            # hook الذاكرة per-user (يعمل داخل عملية litellm)
+│   │   ├── litellm-config.yaml   # model_list + routing — نقطة التبديل الوحيدة
+│   │   └── memory_hook.py        # hook الذاكرة per-user (يعمل داخل عملية litellm)
 │   └── env/
-│       └── .env.example              # قالب المتغيّرات (placeholders فقط، بلا قيم حقيقية)
-├── services/                # كود خدماتنا المحاواة (أُنشئ بـ ADR-012/013)
+│       └── .env.example          # قالب المتغيّرات (placeholders فقط)
+├── services/
 │   └── memory/              # خدمة الذاكرة per-user (FastAPI + asyncpg)
-├── research/                # أبحاث داعمة للقرارات (MEMORY_LANDSCAPE, VISION_SETUP) — معفاة من حدّ 180 سطر
-├── scripts/                 # سكربتات تشغيل/صيانة (عند الحاجة)
+├── tests/                   # pytest (ADR-008)
 ├── docs/                    # كل وثائق الحوكمة (هذا الملف وإخوته)
-│   ├── CONSTITUTION.md
-│   ├── ARCHITECTURE_RULES.md
-│   ├── ERROR_AND_OBSERVABILITY_POLICY.md
-│   ├── DECISIONS.md
-│   └── PROGRESS_MAP.md
-├── models/                  # ملفات GGUF (git-ignored، كبيرة)
-├── .gitignore
-└── README.md
+│   ├── CONSTITUTION.md · ARCHITECTURE_RULES.md · ERROR_AND_OBSERVABILITY_POLICY.md
+│   └── DECISIONS.md · PROGRESS_MAP.md
+├── research/               # أبحاث داعمة (MEMORY_LANDSCAPE, VISION_SETUP) — معفاة من حدّ 180 سطر
+├── legacy/                 # النموذج الأولي المؤرشَف (Qwen3/Gemma، غير مُشغَّل، خارج البوّابة)
+└── models-gemma4/          # GGUF + mmproj (git-ignored، كبيرة)
 ```
 
-> **قرار هيكلي:** إعادة تنظيم المستودع إلى `compose/` + `config/` + `docs/`، وتوحيد كل وثائق الحوكمة تحت `llm-platform/docs/`، **يُسجَّل كـ ADR** في [DECISIONS](DECISIONS.md) قبل اعتماده كحالة فعلية. حتى ذلك الحين هذا الجدول هو الهدف المرجعي.
+> **قرار هيكلي ([ADR-018](DECISIONS.md)):** المنصّة في **جذر المستودع** (رُقِّيت من `llm-platform/`)، والنموذج الأولي القديم مؤرشَف في `legacy/` (متتبَّع، خارج البوّابة). هذا الجدول يعكس الحالة الفعلية المعتمدة.
 
 - **R-ARCH-01** — لكل مجلد جذري **مسؤولية واحدة** كما في الجدول. ممنوع خلط نوعين (لا `*.yaml` إعداد داخل `compose/`، ولا compose داخل `config/`). فحص: مراجعة المسار مقابل الجدول.
 - **R-ARCH-02** — `models/`، `config/env/.env`، وأي `*.override.yml` محلي **مُدرَجة في `.gitignore`** ولا تُرفع أبداً. فحص CI: `git ls-files | grep -E '(^models/|\.env$)'` يجب أن يعيد فراغاً.
-- **R-ARCH-03** — لا ملفات إعداد أو أسرار في جذر المستودع عدا المُصرّح بها: `.gitignore`، `README.md`، `PROJECT_BLUEPRINT.md`. كل إعداد آخر مكانه `config/`. فحص: قائمة الجذر مقابل هذه القائمة البيضاء.
+- **R-ARCH-03** — جذر المستودع يحوي فقط: وثائق الحوكمة العليا (`CLAUDE.md`، `PROJECT_BLUEPRINT.md`، `README.md`)، وإعداد الأدوات (`pyproject.toml`، `.pre-commit-config.yaml`، `.gitignore`)، و`.github/`. **لا أسرار** في الجذر؛ كل إعداد تطبيقي مكانه `config/`. فحص: قائمة الجذر مقابل هذه القائمة البيضاء (ADR-018).
 - **R-ARCH-04** — كل وثائق الحوكمة تحت `docs/` فقط؛ الروابط المتبادلة بينها **نسبية ومجاورة** (`./X.md`). فحص: link-checker لا يجد رابطاً معطّلاً (dangling).
 - **R-ARCH-05** — أي ملف وثيقة هندسية **< 180 سطراً** (حدّ صارم؛ CI يفشل عند 180 فأكثر). تجاوز ذلك يستوجب التقسيم. الإيجاز فضيلة.
 

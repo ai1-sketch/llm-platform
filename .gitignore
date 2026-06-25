@@ -1,14 +1,25 @@
-# بيئة افتراضية وملفات ضخمة — لا تُحفظ في git
-.venv/
-.venv-*/
+# llm-platform — أسرار وبيانات وملفات ضخمة لا تُرفع أبداً (R-ARCH-02/42)
+config/env/.env
+*.override.yml
+*.override.yaml
+
+# موديلات وأوزان كبيرة (تُنزَّل محلياً، خارج git)
 models/
 models-gemma4/
 wheels/
 
-# كاش وملفات مؤقتة
+# بيئات افتراضية (قابلة لإعادة الإنشاء)
+.venv/
+.venv-*/
+
+# Python cache
 __pycache__/
 *.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# سجلّات/كاش أدوات (نموذج legacy)
+*.log
 .gradio/
 gradio_cached_examples/
-*.log
-_*.py
