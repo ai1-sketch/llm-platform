@@ -5,6 +5,7 @@ MemoryItem في models.py، مرحلة Normalize في normalize.py. النقاط
 الاسترجاع/التضمين/الـ Orchestrator في مراحل لاحقة (M2+). تُنادى من LiteLLM hook عبر HTTP داخلي.
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -14,6 +15,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 import asyncpg
+from arabic import normalize_ar
+from embeddings import EMBEDDING_MODEL_VERSION, embed_one, to_pgvector
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from schema import SCHEMA_DDL
@@ -117,12 +120,34 @@ async def add_memory(req: AddReq):
     content = req.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="content فارغ بعد التشذيب")
+    norm = normalize_ar(content)
+    content_hash = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+    token_estimate = max(
+        1, len(content) // 4
+    )  # تقدير كتابة-وقت (heuristic؛ tokenizer دقيق في Compose)
+    # التضمين fail-soft: عطل خدمة التضمين لا يُفقد الحقيقة (تُخزَّن بلا متجه وتُسترجَع لفظياً)
+    vec_literal: str | None = None
+    model_version: str | None = None
+    try:
+        vec_literal = to_pgvector(await embed_one(norm))
+        model_version = EMBEDDING_MODEL_VERSION
+    except Exception as e:  # noqa: BLE001 — fail-soft مقصود؛ نسجّله ولا نكسر الكتابة
+        _log("WARN", "EMBED_FAILED", f"stored without vector: {type(e).__name__}")
     row = await _require_pool().fetchrow(
-        "INSERT INTO memory.user_memory(user_id, content) VALUES($1, $2) RETURNING id",
+        "INSERT INTO memory.user_memory "
+        "(user_id, content, content_hash, token_estimate, embedding, "
+        " embedding_model_version, content_tsv, origin, writer) "
+        "VALUES($1, $2, $3, $4, $5::halfvec, $6, to_tsvector('simple', $7), "
+        " 'user_explicit', 'hook') RETURNING id",
         req.user_id,
         content,
+        content_hash,
+        token_estimate,
+        vec_literal,
+        model_version,
+        norm,
     )
-    return {"id": row["id"], "stored": True}
+    return {"id": row["id"], "stored": True, "embedded": vec_literal is not None}
 
 
 @app.delete("/v1/memories/{mem_id}")

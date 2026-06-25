@@ -32,13 +32,31 @@ def test_list_scoped_by_user(client):
     assert "u1" in pool.fetch.call_args.args  # العزل: user_id يُمرَّر للاستعلام
 
 
-def test_add_memory(client):
+def test_add_memory(client, monkeypatch):
     c, pool = client
+
+    async def _fake_embed(_text):  # نتجنّب الشبكة + نختبر مسار "embedded"
+        return [0.1] * 1024
+
+    monkeypatch.setattr(appmod, "embed_one", _fake_embed)
     r = c.post("/v1/memories", json={"user_id": "u1", "content": "hello"})
     assert r.status_code == 200
-    assert r.json() == {"id": 7, "stored": True}
+    body = r.json()
+    assert body["id"] == 7 and body["stored"] is True and body["embedded"] is True
     args = pool.fetchrow.call_args.args
-    assert "u1" in args and "hello" in args
+    assert "u1" in args and "hello" in args  # العزل + المحتوى يُمرَّران للاستعلام
+
+
+def test_add_memory_embed_fail_soft(client, monkeypatch):
+    c, _ = client
+
+    async def _boom(_text):
+        raise RuntimeError("embeddings down")
+
+    monkeypatch.setattr(appmod, "embed_one", _boom)
+    r = c.post("/v1/memories", json={"user_id": "u1", "content": "hello"})
+    assert r.status_code == 200  # الحقيقة تُخزَّن رغم عطل التضمين
+    assert r.json()["embedded"] is False
 
 
 def test_add_blank_content_400(client):

@@ -21,7 +21,7 @@ jobs:
       - name: Ruff format check
         run: ruff format --check .
       - name: Mypy (our code)
-        run: MYPYPATH=services/memory mypy --config-file pyproject.toml services/memory/app.py services/memory/models.py services/memory/schema.py services/memory/normalize.py config/litellm/memory_hook.py
+        run: MYPYPATH=services/memory mypy --config-file pyproject.toml services/memory/app.py services/memory/models.py services/memory/schema.py services/memory/normalize.py services/memory/arabic.py services/memory/embeddings.py config/litellm/memory_hook.py
       - name: Pytest
         run: pytest -q
 
