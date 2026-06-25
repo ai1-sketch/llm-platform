@@ -13,7 +13,8 @@ repos:
     hooks:
       - id: mypy
         args: ["--config-file", "pyproject.toml"]
-        files: ^(config/litellm/memory_hook\.py|services/memory/app\.py)$   # كودنا فقط (لا الاختبارات)
+        additional_dependencies: ["pydantic"]   # لتحميل plugin pydantic.mypy (MemoryItem — ADR-019)
+        files: ^(config/litellm/memory_hook\.py|services/memory/.*\.py)$   # كودنا (لا الاختبارات)
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1

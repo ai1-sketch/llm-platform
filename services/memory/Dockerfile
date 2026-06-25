@@ -4,7 +4,8 @@ FROM python@sha256:6c4dd321d176d61ea848dc8c73a4f7dbae8f70e0ee48bb411ea2f045b599f
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py .
+# وحدات Context Engine (ADR-019): app.py + models.py + schema.py + normalize.py
+COPY *.py ./
 
 EXPOSE 8088
 # --no-access-log: نُطفئ سجل uvicorn النصّي ونعتمد middleware يُصدر JSON بـ request_id (R-ERR-14/15)

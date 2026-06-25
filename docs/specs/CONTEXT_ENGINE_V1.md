@@ -175,4 +175,5 @@ Context Builder (خط أنابيب حتمي v1):
 - ✅ **M0.4 (embeddings)** — خدمة `embeddings` (llama.cpp CPU، Qwen3-Embedding-0.6B-Q8_0، `--embedding --pooling last`، digest مثبّت) خلف `/v1/embeddings` عبر litellm (موديل `embed-default`). نداء تضمين نجح عبر البوّابة.
 - ✅ **M0.2 (البُعد)** — مقيس فعلياً = **1024** (يؤكّد `halfvec(1024)`). `embedding_model_version = "qwen3-emb-0.6b-q8@1024"`، `embedding_dim = 1024` (مُصدَّر؛ تغييره = عمود v2 + backfill).
 - ✅ **M0.3 (conversation_id)** — **`X-OpenWebUI-Chat-Id`** يحمل معرّف المحادثة، و**`X-OpenWebUI-Message-Id`** للـ provenance؛ يُمرَّران عبر `ENABLE_FORWARD_USER_INFO_HEADERS` المُفعّل. الثبات per-conversation مؤكَّد من المصدر؛ تحقّق التعديل/إعادة-التوليد عند بناء التقاط الأدوار (M4).
-- **التالي: M1** — هجرة الجداول الثلاثة + عقد `MemoryItem` + مُحوّلات Normalize.
+- ✅ **M1 (البيانات + العقد)** — 3 جداول (`user/conversation/file_memory`، عقد أعمدة موحّد من `schema.py`، `halfvec(1024)` + فهارس HNSW/GIN/item_id) · عقد `MemoryItem` (`models.py`) + مرحلة `Normalize` (`normalize.py`) · هجرة `user_memory` في-المكان **غير كاسرة** (L1 round-trip حيّ يعمل). البوّابة خضراء (ruff/mypy+pydantic-plugin/**26 pytest**). checkpoint v13.
+- **التالي: M2** — التضمين عند الكتابة + Retrieve الهجين (pgvector ANN + tsvector FTS + RRF) + بوّابات رخيصة + `normalize_ar` مشتركة.

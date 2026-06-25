@@ -1,7 +1,8 @@
 """
-خدمة الذاكرة (L1) لـ llm-platform — ذاكرة per-user صريحة، معزولة بـ user_id.
-كل استعلام مُقيّد بـ user_id (عزل إلزامي). تُنادى من LiteLLM hook عبر HTTP داخل الشبكة.
-قابلة للترقية لاحقاً لـ Mem0/RAG (ADR-012) دون تغيير عقد الـ hook.
+خدمة الذاكرة / Context Engine لـ llm-platform (ADR-019). معزولة بـ user_id (WHERE user_id إلزامي).
+البنية (M1): المخطط في schema.py (3 مخازن user/conversation/file بعقد أعمدة موحّد)، عقد
+MemoryItem في models.py، مرحلة Normalize في normalize.py. النقاط الحالية = L1 (حقائق المستخدم)؛
+الاسترجاع/التضمين/الـ Orchestrator في مراحل لاحقة (M2+). تُنادى من LiteLLM hook عبر HTTP داخلي.
 """
 
 import json
@@ -15,6 +16,7 @@ from datetime import UTC, datetime
 import asyncpg
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from schema import SCHEMA_DDL
 
 
 def _log(level, code, message, request_id=None, **extra):
@@ -38,19 +40,6 @@ if not DB_URL:  # fail-fast (R-ERR-02): لا نبدأ بإعداد ناقص — 
     raise SystemExit(1)
 
 pool: asyncpg.Pool | None = None
-
-# bootstrap idempotent للمخطط — يطابق التعريف القائم (bigserial PK + index على user_id).
-# يضمن عمل الذاكرة على volume نظيف بلا خطوة يدوية (CONSTITUTION §3 / DoD). فشله = فشل إقلاع صاخب.
-SCHEMA_DDL = """
-CREATE SCHEMA IF NOT EXISTS memory;
-CREATE TABLE IF NOT EXISTS memory.user_memory (
-    id         bigserial   PRIMARY KEY,
-    user_id    text        NOT NULL,
-    content    text        NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_user_memory_user ON memory.user_memory (user_id);
-"""
 
 
 @asynccontextmanager

@@ -41,6 +41,7 @@ max-args = 6               # PLR0913
 # ───────────── Mypy (وضع basic — ADR-008) ─────────────
 [tool.mypy]
 python_version = "3.12"
+plugins = ["pydantic.mypy"]    # يفهم نماذج/حقول Pydantic (MemoryItem — ADR-019)
 warn_unused_ignores = true     # يكشف # type: ignore غير المستخدم
 warn_redundant_casts = true
 ignore_missing_imports = true  # basic: تجاهل stubs الخارجية غير المثبَّتة (litellm, asyncpg, httpx)
