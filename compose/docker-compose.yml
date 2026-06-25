@@ -91,7 +91,7 @@ services:
       start_period: 40s
 
   postgres:                                  # حالة litellm (مفاتيح/كلفة) — يبقى بسجله الافتراضي (استثناء موثّق لـ R-ERR-14؛ ليس مسار طلبات)
-    image: postgres@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50   # postgres:16-alpine مُثبَّت بـ digest (2026-06-25)
+    image: pgvector/pgvector@sha256:131dcf7ff6a900545df8e7e092c270aa8c6db2f2c818e408cb45ec21316b74e6   # pgvector/pgvector:pg16 (PG16 + pgvector) مُثبَّت بـ digest (2026-06-25، ADR-020؛ بدّل postgres:16-alpine)
     restart: unless-stopped
     environment:
       POSTGRES_USER: litellm

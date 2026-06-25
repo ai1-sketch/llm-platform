@@ -40,7 +40,7 @@
 > أمسك بنداً واحداً، نفّذه، ثم حدّث القسمين 2 و 3 (والقسم 1).
 
 1. [x] **تقوية P-01 — مكتملة:** ✓ virtual key (بدل master) · ✓ digests الصور الخمس · ✓ max_tokens=2048 · ✓ رصد P-05 · ✓ رؤية · ✓ اختبارات+CI · ✓ توحيد الجذر + GitHub خاص. كلها مُتحقَّقة حيّاً.
-2. [~] **Context Engine (ذاكرة L2):** التصميم مكتمل ([specs/CONTEXT_ENGINE_V1.md](specs/CONTEXT_ENGINE_V1.md) + [ADR-019](DECISIONS.md)/[ADR-020](DECISIONS.md)) — **بانتظار اعتماد المالك**. عند الاعتماد: تنفيذ M0 (المتطلّبات: تبديل pgvector + تثبيت البُعد + spike conversation_id) → M1 (البيانات+العقد) → … → M5 (ملفات+eval).
+2. [~] **Context Engine (ذاكرة L2):** **معتمد، التنفيذ جارٍ** ([specs/CONTEXT_ENGINE_V1.md](specs/CONTEXT_ENGINE_V1.md) + [ADR-019](DECISIONS.md)/[ADR-020](DECISIONS.md)). ✅ **M0.1** pgvector مُبدَّل (الامتدادات مُفعّلة، البيانات سليمة، checkpoints v10/v11). التالي: M0.4 embeddings → M0.2 تثبيت البُعد → M0.3 conversation_id → M1 (البيانات+العقد) → … → M5.
 3. [ ] التخطيط لـ Phase 2 للمنصّة (سحابة/vLLM عند الحاجة).
 
 ---
