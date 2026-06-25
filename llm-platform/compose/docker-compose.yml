@@ -75,7 +75,8 @@ services:
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY مفقود}
       GLOBAL_LOG_LEVEL: ${WEBUI_LOG_LEVEL:-INFO}              # مستوى السجل (R-ERR-17)
       ENABLE_FORWARD_USER_INFO_HEADERS: "true"               # يمرّر X-OpenWebUI-User-* للبوّابة (للذاكرة per-user)
-      WEBUI_NAME: ${WEBUI_NAME:-Sankari Chat}                 # اسم التطبيق المعروض
+      WEBUI_NAME: ${WEBUI_NAME:-Sankari Chat}                 # اسم التطبيق/الواجهة المعروض (علامة، ليس اسم الموديل — ADR-017)
+      ENABLE_EVALUATION_ARENA_MODELS: "false"                # نُطفئ موديل Arena الافتراضي (نريد موديلاً واحداً يظهر — Gemma 4)
     volumes:
       - openwebui-data:/app/backend/data
     ports:

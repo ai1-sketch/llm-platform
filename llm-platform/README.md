@@ -15,7 +15,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (Gemma 4، GPU
                        └──▶ memory   (ذاكرة per-user L1، عبر hook داخل litellm)
 ```
 
-كل تخاطب عبر العقد `OpenAI /v1`؛ تبديل المحرّك/المزوّد = تعديل سطر واحد في `config/litellm/litellm-config.yaml`. الموديل المعروض للمستخدم = **Sankari Chat** (اسم حياديّ تجاه المحرّك، [ADR-016](docs/DECISIONS.md)). البوّابة والمحرّك والذاكرة **غير مكشوفة** (R-ARCH-24)؛ المنفذ العام الوحيد = الواجهة.
+كل تخاطب عبر العقد `OpenAI /v1`؛ تبديل المحرّك/المزوّد = تعديل سطر واحد في `config/litellm/litellm-config.yaml`. اسم الموديل المعروض = **Gemma 4**؛ و**Sankari Chat** = اسم الواجهة/التطبيق (`WEBUI_NAME`) لا اسم الموديل ([ADR-017](docs/DECISIONS.md)). البوّابة والمحرّك والذاكرة **غير مكشوفة** (R-ARCH-24)؛ المنفذ العام الوحيد = الواجهة.
 
 ## 🗺️ خريطة الحوكمة
 
