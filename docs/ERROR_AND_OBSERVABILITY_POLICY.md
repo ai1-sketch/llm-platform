@@ -92,7 +92,7 @@ ERROR: request failed
 
 - **R-ERR-14** كل السجلات **JSON سطر واحد** (لا نص حر متعدّد الأسطر). الحقول الأساسية: `timestamp` (UTC ISO-8601), `level`, `service`, `request_id`, `code` (إن وُجد), `message`. يُضبط في الخدمات الجاهزة عبر config.
 - **R-ERR-15** **Correlation/Request ID إلزامي:** يُولَّد عند أول دخول (gateway)، يُمرَّر لكل طبقة لاحقة عبر header `X-Request-ID`، ويظهر في كل سطر log للطلب. هو الخيط الذي يربط الطلب عبر الطبقات.
-- **R-ERR-16** قيمة حقل `service` تطابق **اسم خدمة Docker** المعتمد في `docker-compose.yml` (R-ARCH-31): `open-webui`, `litellm`, `llamacpp`, `postgres`, `memory`. هذا شرط نجاح "grep واحد على `request_id` عبر الطبقات" (R-ERR-19). كودنا الحالي (`memory_hook.py` بـ service=litellm، `memory/app.py` بـ service=memory) يلتزمه.
+- **R-ERR-16** قيمة حقل `service` تطابق **اسم خدمة Docker** المعتمد في `docker-compose.yml` (R-ARCH-31): `open-webui`, `litellm`, `llamacpp`, `embeddings`, `postgres`, `memory` (أُضيفت `embeddings` بـ ADR-019/022). هذا شرط نجاح "grep واحد على `request_id` عبر الطبقات" (R-ERR-19). كودنا الحالي (`memory_hook.py` بـ service=litellm، `memory/app.py` بـ service=memory) يلتزمه؛ محرّكا `llamacpp`/`embeddings` صورتان جاهزتان بسجلّهما الأصلي.
 - **R-ERR-17** المستويات: `DEBUG`, `INFO` (افتراضي), `WARN`, `ERROR` (فشل طلب), `CRITICAL` (فشل يهدّد الخدمة). يُضبط عبر config.
 - **R-ERR-18** ممنوع طباعة الأسرار/محتوى المستخدم الحسّاس في السجل؛ المفاتيح تُقنَّع (`sk-...abcd`). السجل يخرج إلى `stdout`/`stderr` فقط (عقد الحاويات)، لا إلى ملفات داخل الحاوية.
 

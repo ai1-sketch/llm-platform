@@ -22,7 +22,7 @@
 ├── .gitignore
 ├── .github/workflows/ci.yml # بوّابة CI (ruff + mypy + pytest + gitleaks)
 ├── compose/
-│   └── docker-compose.yml   # تعريف الخدمات الخمس (open-webui, litellm, llamacpp, postgres, memory)
+│   └── docker-compose.yml   # تعريف الخدمات الستّ (open-webui, litellm, llamacpp, embeddings, postgres, memory)
 ├── config/                  # كل الإعداد الخارجي (لا أسرار قيمية)
 │   ├── litellm/
 │   │   ├── litellm-config.yaml   # model_list + routing — نقطة التبديل الوحيدة
@@ -61,7 +61,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
  (frontend)         (gateway)         (engine)
 ```
 
-- **R-ARCH-10** — **العميل لا يعرف المحرّك.** أي frontend / app / agent / script يتّصل **حصراً** بعنوان البوّابة (`http://litellm:4000/v1`). فحص: `api_base`/`base_url` في أي عميل = منفذ البوّابة فقط، لا منفذ المحرّك (`llamacpp:8000`).
+- **R-ARCH-10** — **العميل لا يعرف المحرّك.** أي frontend / app / agent / script يتّصل **حصراً** بعنوان البوّابة (`http://litellm:4000/v1`). فحص: `api_base`/`base_url` في أي عميل = منفذ البوّابة فقط، لا منفذ المحرّك (`llamacpp:8000`). **استثناء ضيّق واحد:** خدمة backend داخلية ضمن `services/` يجوز أن تنادي محرّكاً **محلياً مجانياً** عبر العقد `/v1` مباشرةً على الشبكة الداخلية، بشروط [ADR-022](DECISIONS.md) الخمسة (الحالة الوحيدة اليوم: `memory` → `embeddings`).
 - **R-ARCH-11** — الاتصال **وحيد الاتجاه نزولاً** فقط. ممنوع أن يستدعي المحرّك البوّابة، أو تستدعي البوّابة الواجهة. فحص: مراجعة `depends_on` وعناوين URL في `docker-compose.yml`.
 - **R-ARCH-12** — **ممنوع تجاوز طبقة** (layer skipping): الواجهة لا تكلّم المحرّك مباشرةً. كل عبور يمرّ بالطبقة المجاورة عبر عقدها.
 - **R-ARCH-13** — **العقد بين الطبقات هو `OpenAI-compatible API` حصراً** (`/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`). أي تكامل لا يتكلّم هذا العقد يُرفض (تجسيد ADR-001).
@@ -82,7 +82,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
 ## 4. اصطلاحات التسمية (Naming)
 
 - **R-ARCH-30** — **الملفات والمجلدات:** `kebab-case` (مثل `litellm-config.yaml`). الاستثناء الوحيد: الوثائق بصيغة `SCREAMING_SNAKE_CASE.md`.
-- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `llamacpp`, `postgres`, `memory` (أُضيفت بـ [ADR-012](DECISIONS.md)/[ADR-013](DECISIONS.md)). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة. (مثال البلوبرنت §10.2 يستخدم حالياً `engine/gateway/webui/db` ويجب تصحيحه لمطابقة هذه القاعدة — يُحسم بـ ADR.)
+- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `llamacpp`, `embeddings`, `postgres`, `memory` (أُضيفت `memory` بـ [ADR-012](DECISIONS.md)/[ADR-013](DECISIONS.md)، و`embeddings` بـ [ADR-019](DECISIONS.md)/[ADR-022](DECISIONS.md)). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة. (مثال البلوبرنت §10.2 يستخدم حالياً `engine/gateway/webui/db` ويجب تصحيحه لمطابقة هذه القاعدة — يُحسم بـ ADR.)
 - **R-ARCH-32** — **متغيّرات البيئة:** `SCREAMING_SNAKE_CASE` ببادئة المكوّن: `LITELLM_*`, `WEBUI_*`, `DATABASE_URL`. تتطابق حرفياً مع `config/env/.env.example`.
 - **R-ARCH-33** — **أسماء الموديلات في `model_list`:** `model_name` لصيقة عرض/منتج يختارها المالك (قد تكون اسم الموديل الفعلي مثل `Gemma 4`، أو اسماً منطقياً مثل `local-chat`) — [ADR-017](DECISIONS.md). **حياديّة التبديل تُصان على مستوى الكود/العقد** (العميل يستهدف `api_base` للبوّابة بلا كود خاص بمحرّك — R-ARCH-10/14)، لا على مستوى اللصيقة؛ فإن ذكرت اللصيقة الموديل تُحدَّث عند التبديل (سطر واحد). فحص: لا كود عميل يربط بمحرّك بعينه.
 - **R-ARCH-34** — حقل `service` في كل log/خطأ (R-ERR-05) **يطابق حرفياً اسم خدمة Docker** المعتمدة في R-ARCH-31 (`litellm`، لا `litellm-gateway`)؛ كي يعمل تتبّع `request_id` عبر الطبقات بـ grep واحد (R-ERR-25).

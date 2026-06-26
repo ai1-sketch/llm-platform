@@ -11,7 +11,9 @@ model_list:
       max_tokens: 2048                     # ميزانية افتراضية تكفي تفكير Gemma 4 + الجواب (تُطبَّق عند إغفال العميل)
     model_info:
       supports_vision: true                # يسمح بتمرير الصور (image_url/base64) عبر العقد إلى المحرّك (ADR-014)
-  - model_name: embed-default              # التضمين للذاكرة/RAG: Qwen3-Embedding-0.6B على CPU خلف /v1/embeddings (ADR-019)
+  # embed-default = مسار البوّابة الجاهز للتضمين (Qwen3-Embedding-0.6B، CPU). خدمة memory تنادي المحرّك
+  # **مباشرةً** على المسار الحارّ (استثناء R-ARCH-10 الضيّق، ADR-022)؛ يُوجَّه هنا عند أوّل trigger (managed/مفوتر).
+  - model_name: embed-default
     litellm_params:
       model: openai/qwen3-embedding-0.6b   # بادئة openai/ = عميل OpenAI-compatible؛ يُوجَّه لخدمة embeddings
       api_base: http://embeddings:8080/v1  # خدمة التضمين على شبكة compose الداخلية

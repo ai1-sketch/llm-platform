@@ -1,6 +1,8 @@
 """
 عميل التضمين (ADR-019، M2): يستدعي خدمة `embeddings` (Qwen3-Embedding-0.6B خلف عقد
 OpenAI /v1/embeddings) ويحوّل المتجه لصيغة pgvector. الإعداد من البيئة (config-driven، R-ARCH-40).
+نداء **مباشر** للمحرّك المحلي المجاني على الشبكة الداخلية = استثناء R-ARCH-10 ضيّق موثّق (ADR-022)؛
+التبديل لتوجيه عبر البوّابة = تعديل `EMBEDDINGS_URL` فقط (config-driven).
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-# llm-platform — P-01 stack (ADR-005/010/011). 5 خدمات: open-webui → litellm → llamacpp (Gemma 4، GPU) + postgres + memory (ذاكرة per-user، ADR-012/013).
+# llm-platform — P-01 stack (ADR-005/010/011). 6 خدمات: open-webui → litellm → llamacpp (Gemma 4، GPU) + embeddings (تضمين CPU، ADR-019) + postgres + memory (ذاكرة per-user، ADR-012/013).
 # التشغيل (من جذر المستودع):
 #   cp config/env/.env.example config/env/.env   # ثم املأ القيم
 #   docker compose --env-file config/env/.env -f compose/docker-compose.yml up -d

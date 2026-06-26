@@ -116,7 +116,7 @@ Context Builder (خط أنابيب حتمي v1):
 
 <a id="8-التضمين-والعربية"></a>
 ## 8. التضمين والعربية
-- **حاوية `embeddings` صغيرة** (Qwen3-Embedding-0.6B-GGUF، CPU، behind `/v1/embeddings` عبر البوّابة) — لا تزاحم Gemma على الـ GPU.
+- **حاوية `embeddings` صغيرة** (Qwen3-Embedding-0.6B-GGUF، CPU، عقد `/v1/embeddings`) — لا تزاحم Gemma على الـ GPU. `memory` ينادي المحرّك **مباشرةً** على الشبكة الداخلية (استثناء R-ARCH-10 الضيّق، [ADR-022](../DECISIONS.md))؛ التبديل لتوجيه عبر البوّابة = `EMBEDDINGS_URL` فقط.
 - `halfvec(<dim مُثبَّت>)`؛ بادئة Instruct/Query على الاستعلام فقط.
 - **`normalize_ar` واحدة** (همزة/تشكيل/tatweel) مُصدَّرة بالإصدار، مستخدمة وقت الفهرسة والاستعلام (تماثل = شرط الدقّة).
 
@@ -172,7 +172,7 @@ Context Builder (خط أنابيب حتمي v1):
 ## 16. نقطة الاستئناف (Resume)
 **الحالة الآن:** معتمد، **M0 (المتطلّبات المسبقة) مكتمل ✅** — جاهزون لـ **M1**.
 - ✅ **M0.1 (pgvector)** — صورة `pgvector/pgvector:pg16` (digest مثبّت)؛ البيانات سليمة (74 جدول litellm)؛ الامتدادات مُفعّلة (`vector 0.8.3`, `pg_trgm 1.6`, `unaccent 1.1`)؛ نسخة أمان `C:\tmp\litellm_backup.sql`. checkpoints v10/v11.
-- ✅ **M0.4 (embeddings)** — خدمة `embeddings` (llama.cpp CPU، Qwen3-Embedding-0.6B-Q8_0، `--embedding --pooling last`، digest مثبّت) خلف `/v1/embeddings` عبر litellm (موديل `embed-default`). نداء تضمين نجح عبر البوّابة.
+- ✅ **M0.4 (embeddings)** — خدمة `embeddings` (llama.cpp CPU، Qwen3-Embedding-0.6B-Q8_0، `--embedding --pooling last`، digest مثبّت) تخدم `/v1/embeddings`. تحقّق M0 الأوّلي تمّ عبر البوّابة (موديل `embed-default`)؛ **التشغيل الحالي: `memory` ينادي المحرّك مباشرةً** (استثناء R-ARCH-10، [ADR-022](../DECISIONS.md)؛ `embed-default` يبقى مسار البوّابة الجاهز).
 - ✅ **M0.2 (البُعد)** — مقيس فعلياً = **1024** (يؤكّد `halfvec(1024)`). `embedding_model_version = "qwen3-emb-0.6b-q8@1024"`، `embedding_dim = 1024` (مُصدَّر؛ تغييره = عمود v2 + backfill).
 - ✅ **M0.3 (conversation_id)** — **`X-OpenWebUI-Chat-Id`** يحمل معرّف المحادثة، و**`X-OpenWebUI-Message-Id`** للـ provenance؛ يُمرَّران عبر `ENABLE_FORWARD_USER_INFO_HEADERS` المُفعّل. الثبات per-conversation مؤكَّد من المصدر؛ تحقّق التعديل/إعادة-التوليد عند بناء التقاط الأدوار (M4).
 - ✅ **M1 (البيانات + العقد)** — 3 جداول (`user/conversation/file_memory`، عقد أعمدة موحّد من `schema.py`، `halfvec(1024)` + فهارس HNSW/GIN/item_id) · عقد `MemoryItem` (`models.py`) + مرحلة `Normalize` (`normalize.py`) · هجرة `user_memory` في-المكان **غير كاسرة** (L1 round-trip حيّ يعمل). البوّابة خضراء (ruff/mypy+pydantic-plugin/**26 pytest**). checkpoint v13.
