@@ -58,6 +58,8 @@ services:
         condition: service_started            # يبدأ مع إقلاع المحرّك؛ retry يغطّي زمن تحميل الموديل
       memory:
         condition: service_healthy            # الذاكرة جاهزة قبل البوّابة
+      embeddings:
+        condition: service_started            # البوّابة تخدم embed-default بتمرير لمحرّك التضمين (ADR-023)
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY مفقود}   # fail-fast (R-ERR-02)
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?LITELLM_SALT_KEY مفقود}
@@ -129,14 +131,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      embeddings:
-        condition: service_started            # يبدأ محرّك التضمين قبلها؛ التضمين fail-soft فلا ننتظر صحّته
+      # لا اعتماد على litellm (تجنّب دورة الاعتماد litellm↔memory)؛ التضمين عبر البوّابة fail-soft
+      # عند الإقلاع حتى تجهز البوّابة، ثم يعمل طبيعياً على المسار الحارّ (ADR-023).
     environment:
       MEMORY_DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}@postgres:5432/litellm
-      EMBEDDINGS_URL: http://embeddings:8080/v1                              # خدمة التضمين (ADR-019، M2)
-      EMBEDDINGS_API_KEY: ${LLAMACPP_API_KEY:?LLAMACPP_API_KEY مفقود}        # مفتاح المحرّك الداخلي
-      EMBEDDINGS_MODEL: qwen3-embedding-0.6b
-      EMBEDDING_MODEL_VERSION: qwen3-emb-0.6b-q8@1024                        # مُصدَّر (يُخزَّن مع كل متجه)
+      EMBEDDINGS_URL: http://litellm:4000/v1                                 # عبر البوّابة لا المحرّك (R-ARCH-10، ADR-023)
+      EMBEDDINGS_API_KEY: ${MEMORY_LITELLM_KEY:?MEMORY_LITELLM_KEY مفقود}    # virtual key مخصّص لـ memory (لا master/مفتاح محرّك)
+      EMBEDDINGS_MODEL: embed-default                                        # موديل التضمين في litellm-config
+      EMBEDDING_MODEL_VERSION: qwen3-emb-0.6b-q8@1024                        # المتجه متطابق بايتياً عبر البوّابة → لا re-embedding
     networks: [internal]                      # داخلية فقط (غير مكشوفة)
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8088/health').status==200 else 1)\""]

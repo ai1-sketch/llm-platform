@@ -1,8 +1,8 @@
 """
-عميل التضمين (ADR-019، M2): يستدعي خدمة `embeddings` (Qwen3-Embedding-0.6B خلف عقد
+عميل التضمين (ADR-019، M2): يطلب التضمين عبر **بوّابة LiteLLM** (موديل `embed-default`، عقد
 OpenAI /v1/embeddings) ويحوّل المتجه لصيغة pgvector. الإعداد من البيئة (config-driven، R-ARCH-40).
-نداء **مباشر** للمحرّك المحلي المجاني على الشبكة الداخلية = استثناء R-ARCH-10 ضيّق موثّق (ADR-022)؛
-التبديل لتوجيه عبر البوّابة = تعديل `EMBEDDINGS_URL` فقط (config-driven).
+التوجيه عبر البوّابة لا المحرّك مباشرةً (R-ARCH-10، ADR-023: كل مرور موديل عبر البوّابة — للتوسّع)؛
+التبديل لمزوّد managed لاحقاً = سطر `api_base` في litellm-config فقط.
 """
 
 from __future__ import annotations
@@ -11,11 +11,13 @@ import os
 
 import httpx
 
-EMBEDDINGS_URL = os.environ.get("EMBEDDINGS_URL", "http://embeddings:8080/v1")
+EMBEDDINGS_URL = os.environ.get("EMBEDDINGS_URL", "http://litellm:4000/v1")  # البوّابة (ADR-023)
 EMBEDDINGS_API_KEY = os.environ.get("EMBEDDINGS_API_KEY", "")
-EMBEDDINGS_MODEL = os.environ.get("EMBEDDINGS_MODEL", "qwen3-embedding-0.6b")
+EMBEDDINGS_MODEL = os.environ.get("EMBEDDINGS_MODEL", "embed-default")
 EMBEDDING_MODEL_VERSION = os.environ.get("EMBEDDING_MODEL_VERSION", "qwen3-emb-0.6b-q8@1024")
-EMBED_TIMEOUT = float(os.environ.get("EMBED_TIMEOUT", "30"))
+# مهلة قصيرة (ADR-023): التضمين سريع (~30ms)؛ نسقط للفظي fail-soft بدل حجز worker بوّابة على المسار
+# الحارّ (دون ميزانية الـ hook ~10s) — يخفّف تشبّع التزامن مع التوجيه عبر البوّابة.
+EMBED_TIMEOUT = float(os.environ.get("EMBED_TIMEOUT", "8"))
 
 
 def _headers() -> dict:
