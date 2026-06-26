@@ -10,8 +10,8 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _install_fake_httpx(monkeypatch, get_payload=None, get_status=200, raise_exc=None):
-    """يستبدل httpx.AsyncClient بعميل وهمي يسجّل النداءات (POST/GET)."""
+def _install_fake_httpx(monkeypatch, assemble_block="", raise_exc=None):
+    """عميل httpx وهمي يسجّل النداءات؛ POST /assemble→context_block، POST /memories→stored."""
     recorder = {"calls": []}
 
     class _Resp:
@@ -36,13 +36,9 @@ def _install_fake_httpx(monkeypatch, get_payload=None, get_status=200, raise_exc
             if raise_exc:
                 raise raise_exc
             recorder["calls"].append(("POST", url, json, headers))
-            return _Resp(200, {"stored": True})
-
-        async def get(self, url, params=None, headers=None):
-            if raise_exc:
-                raise raise_exc
-            recorder["calls"].append(("GET", url, params, headers))
-            return _Resp(get_status, get_payload if get_payload is not None else {"memories": []})
+            if "/assemble" in url:
+                return _Resp(200, {"context_block": assemble_block, "item_count": 1, "tokens": 5})
+            return _Resp(200, {"id": 1, "stored": True})
 
     monkeypatch.setattr(mh.httpx, "AsyncClient", _Client)
     return recorder
@@ -83,32 +79,34 @@ def test_log_json_shape(capsys):
 
 # ── async_pre_call_hook ──
 def test_hook_write_and_read(monkeypatch):
-    rec = _install_fake_httpx(monkeypatch, get_payload={"memories": [{"content": "fact1"}]})
+    rec = _install_fake_httpx(monkeypatch, assemble_block="سياق محفوظ: fact1")
     data = {
         "litellm_call_id": "rid-1",
         "proxy_server_request": {"headers": {"x-openwebui-user-id": "u1"}},
         "messages": [{"role": "user", "content": "تذكّر: لوني أزرق"}],
     }
     out = _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
-    methods = [c[0] for c in rec["calls"]]
-    assert "POST" in methods and "GET" in methods
-    post = next(c for c in rec["calls"] if c[0] == "POST")
-    assert post[2] == {"user_id": "u1", "content": "لوني أزرق"}  # الحقيقة بعد البادئة
-    assert post[3] == {"X-Request-ID": "rid-1"}  # request_id مُمرَّر
+    urls = [c[1] for c in rec["calls"]]
+    assert any("/v1/memories" in u for u in urls)  # كتابة الحقيقة
+    assert any("/v1/assemble" in u for u in urls)  # قراءة عبر assemble
+    write = next(c for c in rec["calls"] if "/v1/memories" in c[1])
+    assert write[2] == {"user_id": "u1", "content": "لوني أزرق"}  # الحقيقة بعد البادئة
+    assert write[3] == {"X-Request-ID": "rid-1"}  # request_id مُمرَّر
     assert out["messages"][0]["role"] == "system"
-    assert "fact1" in out["messages"][0]["content"]  # الذاكرة حُقنت
+    assert "fact1" in out["messages"][0]["content"]  # كتلة assemble حُقنت
 
 
 def test_hook_read_only_no_write(monkeypatch):
-    rec = _install_fake_httpx(monkeypatch, get_payload={"memories": [{"content": "fav"}]})
+    rec = _install_fake_httpx(monkeypatch, assemble_block="سياق محفوظ: fav")
     data = {
         "litellm_call_id": "rid-2",
         "proxy_server_request": {"headers": {"x-openwebui-user-id": "u1"}},
         "messages": [{"role": "user", "content": "ما لوني؟"}],
     }
     out = _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
-    methods = [c[0] for c in rec["calls"]]
-    assert "POST" not in methods and "GET" in methods
+    urls = [c[1] for c in rec["calls"]]
+    assert not any("/v1/memories" in u for u in urls)  # لا كتابة (لا بادئة)
+    assert any("/v1/assemble" in u for u in urls)  # قراءة فقط
     assert "fav" in out["messages"][0]["content"]
 
 

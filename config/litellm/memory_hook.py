@@ -1,7 +1,7 @@
 """
 LiteLLM hook للذاكرة per-user (L1) — ADR-012/013.
 - يقرأ هوية المستخدم من X-OpenWebUI-User-Id (مُثبَت end-to-end).
-- READ: يجيب ذاكرة المستخدم من خدمة memory ويحقنها في رسالة system.
+- READ: يستدعي /v1/assemble (استرجاع دلالي + ترتيب + ميزانية) ويحقن كتلة السياق في رسالة system.
 - WRITE (HITL): عند بادئة "تذكّر:" / "remember:" يخزّن ما بعدها (المستخدم يقرّر ما يُحفظ).
 - fail-open: أي خطأ في الذاكرة لا يكسر المحادثة — لكنه يُسجَّل **بصوت** كسطر JSON مهيكل (R-ERR-08/14).
 - رصد (P-05): سطر JSON بالكلفة + request_id لكل طلب (success/failure event، R-ERR-15/16).
@@ -9,6 +9,7 @@ LiteLLM hook للذاكرة per-user (L1) — ADR-012/013.
 """
 
 import json
+import os
 import sys
 from datetime import UTC, datetime
 
@@ -17,8 +18,10 @@ from litellm.integrations.custom_logger import CustomLogger
 
 MEM_URL = "http://memory:8088"
 REMEMBER_PREFIXES = ("تذكّر:", "تذكر:", "remember:", "/remember ")
-MAX_FACTS = 20
 SERVICE = "litellm"  # هذا الكود يعمل داخل عملية البوّابة → service يطابق اسم خدمة Docker (R-ARCH-34)
+INJECTION_BUDGET = int(
+    os.environ.get("CTX_INJECTION_BUDGET", "1000")
+)  # ميزانية حقن الذاكرة (توكنات، config-driven)
 
 
 def _log(level, code, message, request_id=None, **extra):
@@ -70,25 +73,21 @@ class MemoryHook(CustomLogger):
                             )
                     break
 
-            # READ + حقن
-            async with httpx.AsyncClient(timeout=5) as c:
-                r = await c.get(
-                    f"{MEM_URL}/v1/memories",
-                    params={"user_id": user_id, "limit": MAX_FACTS},
-                    headers=headers_out,
-                )
-            mems = r.json().get("memories", []) if r.status_code == 200 else []
-            if mems:
-                facts = "\n".join(f"- {m['content']}" for m in mems[:MAX_FACTS])
-                mem_text = (
-                    "معلومات محفوظة عن هذا المستخدم (استخدمها عند الحاجة، "
-                    "ولا تذكر أنها 'ذاكرة' إلا إذا سُئلت):\n" + facts
-                )
-                if messages and messages[0].get("role") == "system":
-                    messages[0]["content"] = _text_of(messages[0]) + "\n\n" + mem_text
-                else:
-                    messages.insert(0, {"role": "system", "content": mem_text})
-                data["messages"] = messages
+            # READ عبر /v1/assemble: استرجاع دلالي + ترتيب + ميزانية (M3/M4) → كتلة مُسيَّجة جاهزة
+            if text:
+                async with httpx.AsyncClient(timeout=10) as c:
+                    r = await c.post(
+                        f"{MEM_URL}/v1/assemble",
+                        json={"user_id": user_id, "query": text, "budget_tokens": INJECTION_BUDGET},
+                        headers=headers_out,
+                    )
+                block = r.json().get("context_block", "") if r.status_code == 200 else ""
+                if block:
+                    if messages and messages[0].get("role") == "system":
+                        messages[0]["content"] = _text_of(messages[0]) + "\n\n" + block
+                    else:
+                        messages.insert(0, {"role": "system", "content": block})
+                    data["messages"] = messages
         except httpx.HTTPError as e:
             # فشل متوقّع في الاتصال بخدمة الذاكرة → fail-open لكن صاخب ومهيكل
             _log(
