@@ -3,13 +3,15 @@ LiteLLM hook للذاكرة per-user (Context Engine) — ADR-012/013/019.
 - يقرأ الهوية من X-OpenWebUI-User-Id والمحادثة من X-OpenWebUI-Chat-Id (مُثبَتان end-to-end).
 - READ: يستدعي /v1/assemble (استرجاع دلالي + ترتيب + ميزانية) ويحقن كتلة السياق في رسالة system.
 - WRITE (HITL): عند بادئة "تذكّر:" / "remember:" يخزّن ما بعدها (المستخدم يقرّر ما يُحفظ).
-- CAPTURE (M4b، تلقائي): بعد الرد (بلا كمون) يلتقط دور المستخدم في conversation_memory عبر جسر
-  pre_call→log_success؛ دور المساعد لغير-streaming فقط (streaming = v2). re-entrant-safe.
+- CAPTURE (M4b، تلقائي): مهمة خلفية في pre_call (بلا كمون) تلتقط من **تاريخ الرسائل** دورَ المستخدم
+  الحالي + دورَ المساعد السابق في conversation_memory — يعمل streaming وغير-streaming (التاريخ مصدر
+  موثوق مستقلّ عن التسليم؛ آخر دور مساعد في محادثة مهجورة يُلتقَط عند الاستئناف). re-entrant-safe.
 - fail-open: أي خطأ في الذاكرة لا يكسر المحادثة — لكنه يُسجَّل **بصوت** كسطر JSON مهيكل (R-ERR-08/14).
 - رصد (P-05): سطر JSON بالكلفة + request_id لكل طلب (success/failure event، R-ERR-15/16).
   request_id = litellm_call_id (يُضبط في البوّابة قبل الـ hook ويطابق standard_logging_object).
 """
 
+import asyncio
 import json
 import os
 import sys
@@ -26,9 +28,10 @@ SERVICE = "litellm"  # هذا الكود يعمل داخل عملية البوّ
 INJECTION_BUDGET = int(os.environ.get("CTX_INJECTION_BUDGET", "1000"))  # سقف الحقن المرغوب
 MODEL_WINDOW = int(os.environ.get("CTX_MODEL_WINDOW", "4096"))  # نافذة الموديل (حدّثها عند تبديله)
 RESERVED_TOKENS = int(os.environ.get("CTX_RESERVED_TOKENS", "2560"))  # محجوز للجواب + الرسائل الحيّة
-# التقاط المحادثة (M4b): جسر pre_call→log_success (post-response، بلا كمون) call_id → سياق الدور.
+# التقاط المحادثة (M4b): من **تاريخ الرسائل** في pre_call (مهمة خلفية، بلا كمون) — مستقلّ عن نمط
+# التسليم (streaming/غير)؛ يلتقط دور المستخدم الحالي + دور المساعد السابق. dedup يضمن idempotency.
 CAPTURE_ENABLED = os.environ.get("CTX_CAPTURE_CONVERSATION", "true").lower() == "true"
-_PENDING: dict[str, dict] = {}
+_BG_TASKS: set = set()  # مراجع مهام الالتقاط الخلفية (يمنع جمع القمامة قبل اكتمالها)
 
 
 def _log(level, code, message, request_id=None, **extra):
@@ -57,57 +60,50 @@ def _is_remember(text):
     return any(text.lower().startswith(p.lower()) for p in REMEMBER_PREFIXES)
 
 
-def _assistant_text(obj):
-    """نصّ جواب المساعد من ModelResponse/dict/str — يغطّي streaming وغير-streaming؛ دفاعي."""
-    if obj is None:
-        return ""
-    if isinstance(obj, str):
-        return obj.strip()
-    try:
-        choices = obj.get("choices") if isinstance(obj, dict) else getattr(obj, "choices", None)
-        if not choices:
-            return ""
-        first = choices[0]
-        msg = first.get("message") if isinstance(first, dict) else getattr(first, "message", None)
-        if msg is None:  # بديل streaming: delta
-            msg = first.get("delta") if isinstance(first, dict) else getattr(first, "delta", None)
-        content = msg.get("content") if isinstance(msg, dict) else getattr(msg, "content", None)
-        return (content or "").strip()
-    except Exception:  # noqa: BLE001 — استخراج دفاعي
-        return ""
+def _recent_turns(messages):
+    """آخر دور مستخدم (غير 'تذكّر:') + آخر دور مساعد من تاريخ المحادثة — للالتقاط idempotent.
+    التاريخ مصدر موثوق مستقلّ عن نمط التسليم (يحوي ردود المساعد السابقة كاملةً، عكس deltas)."""
+    turns = []
+    last_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
+    last_assistant = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
+    if last_user:
+        tu = _text_of(last_user).strip()
+        if tu and not _is_remember(tu):
+            turns.append({"role": "user", "content": tu})
+    if last_assistant:
+        ta = _text_of(last_assistant).strip()
+        if ta:
+            turns.append({"role": "assistant", "content": ta})
+    return turns
 
 
 class MemoryHook(CustomLogger):
-    def _stash_for_capture(self, user_id, headers, text, request_id):
-        """يخزّن سياق الدور (M4b) ليلتقطه log_success بعد الرد بلا كمون. يتخطّى أوامر 'تذكّر:'."""
-        if not (CAPTURE_ENABLED and request_id):
+    def _fire_capture(self, user_id, headers, messages, request_id):
+        """يطلق التقاط المحادثة في الخلفية (بلا كمون على المستخدم) من تاريخ الرسائل: دور المستخدم
+        الحالي + دور المساعد السابق. يعمل streaming وغير-streaming (التاريخ مستقلّ عن التسليم).
+        آمن من الحلقة: نداء التضمين الداخلي بلا chat-id في pre_call → لا التقاط."""
+        if not CAPTURE_ENABLED:
             return
         chat_id = headers.get("x-openwebui-chat-id")
-        if not chat_id or _is_remember(text):
+        if not chat_id:
             return
-        if len(_PENDING) > 5000:  # حارس تسرّب دفاعي (يُفرَّغ عادةً في success/failure)
-            _PENDING.clear()
-        _PENDING[request_id] = {"user_id": user_id, "conversation_id": chat_id, "user_text": text}
+        turns = _recent_turns(messages)
+        if not turns:
+            return
+        task = asyncio.create_task(self._do_capture(user_id, chat_id, turns, request_id))
+        _BG_TASKS.add(task)  # مرجع يمنع GC؛ يُزال عند الاكتمال
+        task.add_done_callback(_BG_TASKS.discard)
 
-    async def _capture_turns(self, request_id, assistant_text):
-        """التقاط دور المستخدم + جواب المساعد في conversation_memory (post-response). آمن من الحلقة:
-        نداء التضمين الداخلي لا يُخزَّن في _PENDING (بلا user_id في pre_call)."""
-        pend = _PENDING.pop(request_id, None) if request_id else None
-        if not pend:
-            return
-        turns = [{"role": "user", "content": pend["user_text"]}]
-        if assistant_text:
-            turns.append({"role": "assistant", "content": assistant_text})
-        async with httpx.AsyncClient(timeout=10) as c:
-            await c.post(
-                f"{MEM_URL}/v1/conversation/capture",
-                json={
-                    "user_id": pend["user_id"],
-                    "conversation_id": pend["conversation_id"],
-                    "turns": turns,
-                },
-                headers={"X-Request-ID": request_id} if request_id else {},
-            )
+    async def _do_capture(self, user_id, conversation_id, turns, request_id):
+        try:
+            async with httpx.AsyncClient(timeout=10) as c:
+                await c.post(
+                    f"{MEM_URL}/v1/conversation/capture",
+                    json={"user_id": user_id, "conversation_id": conversation_id, "turns": turns},
+                    headers={"X-Request-ID": request_id} if request_id else {},
+                )
+        except Exception as e:  # noqa: BLE001 — fail-open: الالتقاط لا يكسر شيئاً
+            _log("WARN", "CAPTURE_FAILED", f"capture failed: {type(e).__name__}", request_id)
 
     async def _maybe_write(self, user_id, text, headers_out, request_id):
         """WRITE (HITL صريح): يخزّن ما بعد بادئة 'تذكّر:'/'remember:' فقط (المستخدم يقرّر)."""
@@ -177,7 +173,7 @@ class MemoryHook(CustomLogger):
             text = _text_of(last_user).strip()
             if not text:
                 return data
-            self._stash_for_capture(user_id, headers, text, request_id)  # M4b (يُلتقَط post-response)
+            self._fire_capture(user_id, headers, messages, request_id)  # M4b (خلفي)
             await self._maybe_write(user_id, text, headers_out, request_id)
             await self._assemble_and_inject(user_id, text, messages, data, headers_out, request_id)
         except httpx.HTTPError as e:
@@ -216,27 +212,11 @@ class MemoryHook(CustomLogger):
             )
         except Exception as e:  # noqa: BLE001 — الرصد لا يجب أن يكسر الطلب
             _log("WARN", "COST_LOG_FAILED", f"could not emit cost log: {type(e).__name__}")
-        # M4b: التقاط المحادثة بعد الرد (بلا كمون). دور المستخدم دائماً؛
-        # دور المساعد لغير-streaming فقط (streaming/OWUI عبر iterator-hook = مؤجَّل v2).
-        try:
-            assistant_text = _assistant_text(response_obj) or _assistant_text(slo.get("response"))
-            await self._capture_turns(request_id, assistant_text)
-        except Exception as e:  # noqa: BLE001 — fail-open: الالتقاط لا يكسر شيئاً
-            if request_id:
-                _PENDING.pop(request_id, None)
-            _log(
-                "WARN",
-                "CAPTURE_FAILED",
-                f"conversation capture failed: {type(e).__name__}",
-                request_id,
-            )
 
     async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
         try:
             slo = kwargs.get("standard_logging_object") or {}
             request_id = slo.get("litellm_call_id") or kwargs.get("litellm_call_id")
-            if request_id:
-                _PENDING.pop(request_id, None)  # M4b: تنظيف الجسر للطلبات الفاشلة (لا التقاط)
             _log(
                 "ERROR",
                 "REQUEST_FAILED",

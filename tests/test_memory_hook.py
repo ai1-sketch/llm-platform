@@ -195,64 +195,84 @@ def test_hook_skips_injection_when_budget_nonpositive(monkeypatch, capsys):
     assert out["messages"][0]["content"] == "ما لوني؟"  # المحادثة لم تنكسر
 
 
-# ── M4b: التقاط المحادثة (جسر pre_call→log_success) ──
-def test_hook_stashes_then_captures(monkeypatch):
+# ── M4b: التقاط المحادثة (من التاريخ، مهمة خلفية في pre_call) ──
+def _run_drain(hook_coro):
+    """يشغّل الـ hook ثم يستنزف مهام الالتقاط الخلفية في نفس الحلقة (لاختبار create_task)."""
+
+    async def _s():
+        r = await hook_coro
+        if mh._BG_TASKS:
+            await asyncio.gather(*list(mh._BG_TASKS))
+        return r
+
+    return asyncio.run(_s())
+
+
+def test_recent_turns_user_and_prev_assistant():
+    msgs = [
+        {"role": "user", "content": "س١"},
+        {"role": "assistant", "content": "ج١"},
+        {"role": "user", "content": "س٢"},
+    ]
+    assert mh._recent_turns(msgs) == [
+        {"role": "user", "content": "س٢"},  # آخر دور مستخدم
+        {"role": "assistant", "content": "ج١"},  # آخر دور مساعد (السابق)
+    ]
+
+
+def test_recent_turns_skips_remember_user():
+    msgs = [{"role": "assistant", "content": "ج"}, {"role": "user", "content": "تذكّر: x"}]
+    assert mh._recent_turns(msgs) == [{"role": "assistant", "content": "ج"}]  # تذكّر يُتخطّى
+
+
+def test_hook_fires_capture_from_history(monkeypatch):
     rec = _install_fake_httpx(monkeypatch, assemble_block="ctx")
-    mh._PENDING.clear()
+    mh._BG_TASKS.clear()
     data = {
-        "litellm_call_id": "cap-1",
+        "litellm_call_id": "h1",
         "proxy_server_request": {
             "headers": {"x-openwebui-user-id": "u1", "x-openwebui-chat-id": "chat-1"}
         },
-        "messages": [{"role": "user", "content": "أنا أحب القهوة"}],
+        "messages": [
+            {"role": "user", "content": "أنا أحب القهوة"},
+            {"role": "assistant", "content": "القهوة رائعة"},
+            {"role": "user", "content": "وماذا عن الشاي؟"},
+        ],
     }
-    _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
-    assert "cap-1" in mh._PENDING  # خُزِّن سياق الدور في pre_call
-    resp = {"choices": [{"message": {"content": "القهوة رائعة"}}]}
-    slo = {"standard_logging_object": {"litellm_call_id": "cap-1", "model": "Gemma 4"}}
-    _run(mh.MemoryHook().async_log_success_event(slo, resp, None, None))
-    assert "cap-1" not in mh._PENDING  # أُفرِغ بعد الالتقاط
+    _run_drain(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
     cap = next(c for c in rec["calls"] if "/v1/conversation/capture" in c[1])
     body = cap[2]
     assert body["user_id"] == "u1" and body["conversation_id"] == "chat-1"
-    assert [t["role"] for t in body["turns"]] == ["user", "assistant"]
-    assert body["turns"][0]["content"] == "أنا أحب القهوة"
-    assert body["turns"][1]["content"] == "القهوة رائعة"
+    contents = {t["role"]: t["content"] for t in body["turns"]}
+    assert contents["user"] == "وماذا عن الشاي؟"  # آخر دور مستخدم
+    assert contents["assistant"] == "القهوة رائعة"  # دور المساعد السابق (من التاريخ)
 
 
-def test_hook_capture_skips_unstashed_call(monkeypatch):
-    # أمان الحلقة: نداء التضمين الداخلي (call_id غير مُخزَّن) لا يُحدِث التقاطاً
-    rec = _install_fake_httpx(monkeypatch)
-    mh._PENDING.clear()
-    slo = {"standard_logging_object": {"litellm_call_id": "embed-xyz", "model": "embed-default"}}
-    _run(mh.MemoryHook().async_log_success_event(slo, {"choices": []}, None, None))
-    assert not any("/v1/conversation/capture" in c[1] for c in rec["calls"])
-
-
-def test_hook_no_stash_without_chat_id(monkeypatch):
-    mh._PENDING.clear()
-    _install_fake_httpx(monkeypatch, assemble_block="ctx")
+def test_hook_no_capture_without_chat_id(monkeypatch):
+    rec = _install_fake_httpx(monkeypatch, assemble_block="ctx")
+    mh._BG_TASKS.clear()
     data = {
-        "litellm_call_id": "nc-1",
+        "litellm_call_id": "h2",
         "proxy_server_request": {"headers": {"x-openwebui-user-id": "u1"}},
         "messages": [{"role": "user", "content": "hi"}],
     }
-    _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
-    assert "nc-1" not in mh._PENDING  # بلا chat-id لا scoping → لا التقاط
+    _run_drain(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
+    assert not any("/v1/conversation/capture" in c[1] for c in rec["calls"])
 
 
-def test_hook_no_stash_for_remember(monkeypatch):
-    mh._PENDING.clear()
-    _install_fake_httpx(monkeypatch, assemble_block="ctx")
+def test_hook_no_capture_when_disabled(monkeypatch):
+    monkeypatch.setattr(mh, "CAPTURE_ENABLED", False)
+    rec = _install_fake_httpx(monkeypatch, assemble_block="ctx")
+    mh._BG_TASKS.clear()
     data = {
-        "litellm_call_id": "rem-x",
+        "litellm_call_id": "h3",
         "proxy_server_request": {
-            "headers": {"x-openwebui-user-id": "u1", "x-openwebui-chat-id": "chat-1"}
+            "headers": {"x-openwebui-user-id": "u1", "x-openwebui-chat-id": "c"}
         },
-        "messages": [{"role": "user", "content": "تذكّر: شيء"}],
+        "messages": [{"role": "user", "content": "hi"}],
     }
-    _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
-    assert "rem-x" not in mh._PENDING  # أوامر 'تذكّر:' تُخزَّن صراحةً، لا تُلتقَط كمحادثة
+    _run_drain(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
+    assert not any("/v1/conversation/capture" in c[1] for c in rec["calls"])
 
 
 def test_success_event_cost_log(capsys):
