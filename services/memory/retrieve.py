@@ -14,6 +14,7 @@ from arabic import normalize_ar
 from embeddings import embed_query, to_pgvector
 from models import MemoryItem
 from normalize import row_to_memory_item
+from obs import log
 
 DEFAULT_TABLES = ("user_memory", "conversation_memory", "file_memory")
 RRF_K = 60  # ثابت RRF القياسي
@@ -77,7 +78,13 @@ async def retrieve(
     try:
         # تضمين الاستعلام بتعليمة Qwen3 (لا-تماثلي)؛ request_id يُمرَّر للبوّابة (R-ERR-19)
         qvec_literal = to_pgvector(await embed_query(norm_query, request_id=request_id))
-    except Exception:  # noqa: BLE001 — fail-soft: بلا تضمين نكتفي بالبحث اللفظي
+    except Exception as e:  # noqa: BLE001 — fail-soft لكن **صاخب**: نسجّل ثم نكتفي بالبحث اللفظي
+        log(
+            "WARN",
+            "EMBED_QUERY_FAILED",
+            f"query embed failed, falling back to lexical: {type(e).__name__}",
+            request_id,
+        )
         qvec_literal = None
 
     tasks = []

@@ -66,6 +66,21 @@ def test_retrieve_lexical_only_when_embed_fails(monkeypatch):
     assert pool.fetch.await_count == 1  # تضمين فشل → استعلام لفظي واحد فقط (لا dense)
 
 
+def test_retrieve_logs_on_embed_failure(monkeypatch, capsys):
+    # fail-soft صاخب: فشل تضمين الاستعلام يُسجَّل (EMBED_QUERY_FAILED) مع request_id (R-ERR-10)
+    a = uuid4()
+    pool = AsyncMock()
+    pool.fetch = AsyncMock(return_value=[_row(a, "hello")])
+
+    async def _boom(_t, request_id=None):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(R, "embed_query", _boom)
+    asyncio.run(R.retrieve(pool, "u1", "hello", tables=("user_memory",), request_id="rid-x"))
+    out = capsys.readouterr().out
+    assert "EMBED_QUERY_FAILED" in out and "rid-x" in out
+
+
 def test_retrieve_runs_dense_and_lexical_when_embedded(monkeypatch):
     a = uuid4()
     pool = AsyncMock()

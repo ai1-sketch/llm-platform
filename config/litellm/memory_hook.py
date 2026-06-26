@@ -49,17 +49,24 @@ def _text_of(msg):
 
 
 class MemoryHook(CustomLogger):
-    async def _maybe_write(self, user_id, text, headers_out):
+    async def _maybe_write(self, user_id, text, headers_out, request_id):
         """WRITE (HITL صريح): يخزّن ما بعد بادئة 'تذكّر:'/'remember:' فقط (المستخدم يقرّر)."""
         for p in REMEMBER_PREFIXES:
             if text.lower().startswith(p.lower()):
                 fact = text[len(p) :].strip()
                 if fact:
                     async with httpx.AsyncClient(timeout=5) as c:
-                        await c.post(
+                        r = await c.post(
                             f"{MEM_URL}/v1/memories",
                             json={"user_id": user_id, "content": fact},
                             headers=headers_out,
+                        )
+                    if r.status_code >= 300:  # لا نبتلع فشل الحفظ صامتاً (R-ERR-10/21)
+                        _log(
+                            "ERROR",
+                            "MEMORY_WRITE_FAILED",
+                            f"store 'remember' fact failed: HTTP {r.status_code}",
+                            request_id,
                         )
                 return
 
@@ -80,7 +87,15 @@ class MemoryHook(CustomLogger):
                 json={"user_id": user_id, "query": text, "budget_tokens": budget},
                 headers=headers_out,
             )
-        block = r.json().get("context_block", "") if r.status_code == 200 else ""
+        if r.status_code != 200:  # فشل assemble → لا حقن، لكن صاخب (لا ابتلاع صامت، R-ERR-10)
+            _log(
+                "WARN",
+                "ASSEMBLE_NON_200",
+                f"assemble returned HTTP {r.status_code}; no context injected",
+                request_id,
+            )
+            return
+        block = r.json().get("context_block", "")
         if not block:
             return
         if messages[0].get("role") == "system":
@@ -102,7 +117,7 @@ class MemoryHook(CustomLogger):
             text = _text_of(last_user).strip()
             if not text:
                 return data
-            await self._maybe_write(user_id, text, headers_out)
+            await self._maybe_write(user_id, text, headers_out, request_id)
             await self._assemble_and_inject(user_id, text, messages, data, headers_out, request_id)
         except httpx.HTTPError as e:
             # فشل متوقّع في الاتصال بخدمة الذاكرة → fail-open لكن صاخب ومهيكل

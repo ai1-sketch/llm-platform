@@ -34,7 +34,7 @@ jobs:
       - name: Ruff format check
         run: ruff format --check .
       - name: Mypy (our code)
-        run: MYPYPATH=services/memory mypy --config-file pyproject.toml services/memory/app.py services/memory/models.py services/memory/schema.py services/memory/normalize.py services/memory/arabic.py services/memory/embeddings.py services/memory/retrieve.py services/memory/rank.py services/memory/compose.py config/litellm/memory_hook.py
+        run: MYPYPATH=services/memory mypy --config-file pyproject.toml services/memory/app.py services/memory/models.py services/memory/schema.py services/memory/normalize.py services/memory/arabic.py services/memory/embeddings.py services/memory/retrieve.py services/memory/rank.py services/memory/compose.py services/memory/obs.py config/litellm/memory_hook.py
       - name: Pytest (unit + real-Postgres integration — عزل per-user يُنفَّذ فعلاً)
         env:
           MEMORY_TEST_DATABASE_URL: postgresql://litellm:litellm@localhost:5432/litellm

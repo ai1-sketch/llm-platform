@@ -6,40 +6,22 @@ MemoryItem في models.py، مرحلة Normalize في normalize.py. النقاط
 """
 
 import hashlib
-import json
 import os
-import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 
 import asyncpg
 from arabic import normalize_ar
 from embeddings import EMBEDDING_MODEL_VERSION, embed_one, to_pgvector
 from fastapi import FastAPI, HTTPException, Query, Request
+from obs import log as _log
 from pydantic import BaseModel, Field
 from rank import rank_items
 from retrieve import retrieve
 from schema import SCHEMA_DDL
 
 from compose import compose_context
-
-
-def _log(level, code, message, request_id=None, **extra):
-    """سطر سجل JSON واحد (R-ERR-14). service=memory. لا محتوى/أسرار (R-ERR-18)."""
-    rec = {
-        "timestamp": datetime.now(UTC).isoformat(),
-        "level": level,
-        "service": "memory",
-        "code": code,
-        "message": message,
-    }
-    if request_id:
-        rec["request_id"] = request_id
-    rec.update(extra)
-    print(json.dumps(rec, ensure_ascii=False), file=sys.stdout, flush=True)
-
 
 DB_URL = os.environ.get("MEMORY_DATABASE_URL")
 if not DB_URL:  # fail-fast (R-ERR-02): لا نبدأ بإعداد ناقص — خطأ يسمّي المتغيّر
@@ -52,10 +34,20 @@ pool: asyncpg.Pool | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global pool
-    pool = await asyncpg.create_pool(DB_URL, min_size=1, max_size=5)
-    # نُنشئ المخطط عند الإقلاع (لا نبتلع الفشل: قاعدة معطوبة يجب أن تمنع بدء الخدمة).
-    async with pool.acquire() as conn:
-        await conn.execute(SCHEMA_DDL)
+    # نُنشئ المخطط عند الإقلاع (لا نبتلع الفشل: قاعدة معطوبة تمنع بدء الخدمة). الفشل يخرج
+    # **بصوت** كخطأ CONFIG مهيكل لا stack-trace خام (ADR-020، R-ERR-01/21).
+    try:
+        pool = await asyncpg.create_pool(DB_URL, min_size=1, max_size=5)
+        async with pool.acquire() as conn:
+            await conn.execute(SCHEMA_DDL)
+    except Exception as e:  # noqa: BLE001 — نسجّل خطأ إقلاع مهيكل ثم نُفشل بوضوح (لا ابتلاع)
+        _log(
+            "CRITICAL",
+            "BOOTSTRAP_FAILED",
+            f"تعذّر تهيئة قاعدة الذاكرة (pgvector/DDL): {type(e).__name__}",
+            remediation="تأكّد أن صورة postgres = pgvector وأن الامتدادات قابلة للإنشاء (ADR-020).",
+        )
+        raise SystemExit(1) from e
     _log("INFO", "SCHEMA_READY", "memory schema ensured (idempotent bootstrap)")
     yield
     if pool:

@@ -10,8 +10,11 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _install_fake_httpx(monkeypatch, assemble_block="", raise_exc=None):
-    """عميل httpx وهمي يسجّل النداءات؛ POST /assemble→context_block، POST /memories→stored."""
+def _install_fake_httpx(
+    monkeypatch, assemble_block="", raise_exc=None, write_status=200, assemble_status=200
+):
+    """عميل httpx وهمي يسجّل النداءات؛ POST /assemble→context_block، POST /memories→stored.
+    write_status/assemble_status يحاكيان فشل HTTP لاختبار مسارات الفشل الصاخب."""
     recorder = {"calls": []}
 
     class _Resp:
@@ -37,8 +40,10 @@ def _install_fake_httpx(monkeypatch, assemble_block="", raise_exc=None):
                 raise raise_exc
             recorder["calls"].append(("POST", url, json, headers))
             if "/assemble" in url:
-                return _Resp(200, {"context_block": assemble_block, "item_count": 1, "tokens": 5})
-            return _Resp(200, {"id": 1, "stored": True})
+                return _Resp(
+                    assemble_status, {"context_block": assemble_block, "item_count": 1, "tokens": 5}
+                )
+            return _Resp(write_status, {"id": 1, "stored": True})
 
     monkeypatch.setattr(mh.httpx, "AsyncClient", _Client)
     return recorder
@@ -120,6 +125,31 @@ def test_hook_no_identity_passthrough(monkeypatch):
     out = _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
     assert rec["calls"] == []  # بلا هوية → لا نداء ذاكرة
     assert out == data
+
+
+def test_hook_write_failure_logged(monkeypatch, capsys):
+    # فشل حفظ "تذكّر:" يجب ألّا يُبتلَع صامتاً (R-ERR-10/21)
+    _install_fake_httpx(monkeypatch, write_status=500)
+    data = {
+        "litellm_call_id": "rid-w5",
+        "proxy_server_request": {"headers": {"x-openwebui-user-id": "u1"}},
+        "messages": [{"role": "user", "content": "تذكّر: حقيقة مهمة"}],
+    }
+    _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
+    assert "MEMORY_WRITE_FAILED" in capsys.readouterr().out
+
+
+def test_hook_assemble_non_200_logged(monkeypatch, capsys):
+    # assemble يفشل → لا حقن لكن سجلّ صاخب، والمحادثة لا تنكسر
+    _install_fake_httpx(monkeypatch, assemble_block="سياق", assemble_status=503)
+    data = {
+        "litellm_call_id": "rid-a5",
+        "proxy_server_request": {"headers": {"x-openwebui-user-id": "u1"}},
+        "messages": [{"role": "user", "content": "ما لوني؟"}],
+    }
+    out = _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
+    assert "ASSEMBLE_NON_200" in capsys.readouterr().out
+    assert out["messages"][0]["content"] == "ما لوني؟"  # لا حقن، المحادثة سليمة
 
 
 def test_hook_fail_open(monkeypatch, capsys):
