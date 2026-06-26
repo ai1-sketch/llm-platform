@@ -1,5 +1,7 @@
 # llm-platform CI — مرآة فحوص pre-commit (ADR-008). يفرض الجودة على كل push/PR.
 # المستودع = المنصّة (الجذر، ADR-018)؛ legacy/ مستثنى عبر ruff extend-exclude (ADR-008).
+# ملاحظة (ADR-025): محرّك السياق المخصّص متقاعد إلى فرع future/context-engine؛ الخطّ الأساسي =
+# OWUI (RAG + Memory) + بوّابة LiteLLM + llamacpp + postgres، بلا كود بايثون على المسار الأساسي.
 name: ci
 
 on:
@@ -9,36 +11,17 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    services:
-      # Postgres+pgvector حقيقي لبوّابة اختبار العزل per-user (المواصفة §13). digest مثبّت = يطابق compose.
-      postgres:
-        image: pgvector/pgvector@sha256:131dcf7ff6a900545df8e7e092c270aa8c6db2f2c818e408cb45ec21316b74e6
-        env:
-          POSTGRES_USER: litellm
-          POSTGRES_PASSWORD: litellm
-          POSTGRES_DB: litellm
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U litellm -d litellm"
-          --health-interval 10s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install pinned tools (حتمية؛ litellm مُكفّأ في conftest؛ asyncpg حقيقي للتكامل)
-        run: pip install ruff==0.12.0 mypy==2.1.0 pytest==9.1.1 pydantic==2.13.4 fastapi==0.138.1 httpx==0.28.1 asyncpg==0.31.0
+      - name: Install pinned tools (lint فقط — لا كود بايثون على المسار الأساسي بعد ADR-025)
+        run: pip install ruff==0.12.0
       - name: Ruff lint
         run: ruff check .
       - name: Ruff format check
         run: ruff format --check .
-      - name: Mypy (our code)
-        run: MYPYPATH=services/memory mypy --config-file pyproject.toml services/memory/app.py services/memory/models.py services/memory/schema.py services/memory/normalize.py services/memory/arabic.py services/memory/embeddings.py services/memory/retrieve.py services/memory/rank.py services/memory/compose.py services/memory/obs.py config/litellm/memory_hook.py
-      - name: Pytest (unit + real-Postgres integration — عزل per-user يُنفَّذ فعلاً)
-        env:
-          MEMORY_TEST_DATABASE_URL: postgresql://litellm:litellm@localhost:5432/litellm
-        run: pytest -q
 
   build:
     runs-on: ubuntu-latest
@@ -46,10 +29,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate compose config (dummy env so required ${VAR:?} resolve)
         run: |
-          printf 'POSTGRES_PASSWORD=x\nLITELLM_MASTER_KEY=x\nLITELLM_SALT_KEY=x\nLLAMACPP_API_KEY=x\nOPENWEBUI_LITELLM_KEY=x\nMEMORY_LITELLM_KEY=x\nWEBUI_SECRET_KEY=x\n' > /tmp/ci.env
+          printf 'POSTGRES_PASSWORD=x\nLITELLM_MASTER_KEY=x\nLITELLM_SALT_KEY=x\nLLAMACPP_API_KEY=x\nOPENWEBUI_LITELLM_KEY=x\nWEBUI_SECRET_KEY=x\n' > /tmp/ci.env
           docker compose -f compose/docker-compose.yml --env-file /tmp/ci.env config -q
-      - name: Build the memory image (the only image we build — catches Dockerfile breakage)
-        run: docker build -t memory-ci services/memory
 
   secrets:
     runs-on: ubuntu-latest

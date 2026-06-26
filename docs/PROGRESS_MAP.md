@@ -4,12 +4,12 @@
 >
 > الحالة: `[ ]` لم يبدأ · `[~]` جارٍ · `[x]` تمّ. كل بند `P-NN` منجَز يربط PR/قرار في [DECISIONS](DECISIONS.md). مرجع DoD في [CONSTITUTION](CONSTITUTION.md) §3.
 
-> **آخر تحديث:** 2026-06-25 · **المحدِّث:** Chief Architect (تدقيق اتساق + إصلاح ثغرات)
+> **آخر تحديث:** 2026-06-26 · **المحدِّث:** Chief Architect (تحوّل معماري: OWUI أساسي، تقاعد محرّك السياق — ADR-025)
 
 ---
 
 ## 1. الحالة الآن (سطر واحد)
-**P-01 شغّال end-to-end ✅ + Context Engine (ذاكرة L2 دلالية) M0→M4a ✅ + تدقيق شامل مُعالَج ✅.** **6 خدمات** healthy (Open WebUI → LiteLLM → llamacpp/Gemma 4 GPU + **embeddings** (Qwen3، CPU) + postgres/pgvector + memory). الموديل = **Gemma 4** ("Sankari Chat" = اسم الواجهة، ADR-017). ذاكرة per-user **دلالية** (pgvector halfvec 1024 + استرجاع هجين RRF + حقن واعٍ بالنافذة، ADR-021)؛ **كل تضمين عبر البوّابة** (ADR-023)؛ عزل `WHERE user_id` مُختبَر على Postgres حقيقي. رصد `request_id`+كلفة بـ JSON (R-ERR-19)، والرؤية تعمل (ADR-014). الواجهة على http://127.0.0.1:3000. التالي: **M4b** (التقاط المحادثة) → M5 (ملفات + eval).
+**P-01 شغّال end-to-end ✅ — المسار الأساسي يعتمد OWUI كلياً (RAG + Memory المدمجة، [ADR-025](DECISIONS.md)).** **4 خدمات** healthy (Open WebUI → LiteLLM → llamacpp/Gemma 4 GPU + postgres/pgvector). الموديل = **Gemma 4** ("Sankari Chat" = اسم الواجهة، ADR-017). الذاكرة/الملفات عبر ميزات OWUI المدمجة (`ENABLE_MEMORIES=true`؛ RAG مستندات). الرؤية تعمل (ADR-014). الواجهة على http://127.0.0.1:3000. **محرّك السياق المخصّص (M0–M4b: ذاكرة دلالية + التقاط محادثة + تضمين عبر البوّابة) متقاعد إلى فرع `future/context-engine`** (ADR-025) — ميزة تطوير مستقبلية، ليست على الأساسي. التالي: تشغيل CI على الأساسي + دمج فرع التقاعد.
 
 ## 2. أُنجِز مؤخّراً
 - [x] إثبات جدوى محلي (Qwen3 / Gemma عبر llama.cpp).

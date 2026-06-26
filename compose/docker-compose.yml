@@ -1,4 +1,5 @@
-# llm-platform — P-01 stack (ADR-005/010/011). 6 خدمات: open-webui → litellm → llamacpp (Gemma 4، GPU) + embeddings (تضمين CPU، ADR-019) + postgres + memory (ذاكرة per-user، ADR-012/013).
+# llm-platform — P-01 stack (ADR-005/010/011، ADR-025). 4 خدمات: open-webui → litellm → llamacpp (Gemma 4، GPU) + postgres.
+# الذاكرة/RAG عبر ميزات OWUI المدمجة (RAG + Personalization Memory، ADR-025). محرّك السياق المخصّص متقاعد إلى فرع future/context-engine.
 # التشغيل (من جذر المستودع):
 #   cp config/env/.env.example config/env/.env   # ثم املأ القيم
 #   docker compose --env-file config/env/.env -f compose/docker-compose.yml up -d
@@ -34,20 +35,6 @@ services:
     # لا healthcheck: الصورة minimal بلا curl. litellm تعتمد عليها بـ service_started وتعيد المحاولة حتى يُحمَّل الموديل.
     # (عند أوّل تشغيل: docker exec llamacpp sh -c "which curl wget python3" لتقرير healthcheck لاحق على /health.)
 
-  embeddings:                                # محرّك التضمين: Qwen3-Embedding-0.6B على CPU (ADR-019) — لا يزاحم Gemma على الـ GPU
-    image: ghcr.io/ggml-org/llama.cpp@sha256:354391e1edaa308ae3145f3137deab808e7f4fcef55f331443f7f68c158f6a12   # llama.cpp:server (CPU) مُثبَّت بـ digest (2026-06-25، ADR-019)
-    restart: unless-stopped
-    volumes:
-      - "${EMBED_MODEL_DIR:-../models-embeddings}:/models:ro"   # مجلّد GGUF للتضمين (نسبةً لـ compose/)
-    command: >
-      -m /models/${EMBED_MODEL_FILE:-Qwen3-Embedding-0.6B-Q8_0.gguf}
-      --embedding --pooling last
-      --host 0.0.0.0 --port 8080
-      --ctx-size ${EMBED_CTX_SIZE:-2048}
-      --api-key ${LLAMACPP_API_KEY:?LLAMACPP_API_KEY مفقود}
-    networks: [internal]                       # داخلية فقط (غير مكشوفة)
-    # CPU فقط (بلا حجز GPU) — يوفّر VRAM لـ Gemma. لا healthcheck (صورة minimal بلا curl).
-
   litellm:                                   # البوّابة (R-ARCH-31)
     image: ghcr.io/berriai/litellm@sha256:8f3517476b8293ccc1c3b0da7940d8dabbfe64b013454113f5a3cb68265c439b   # main-stable مُثبَّت بـ digest (2026-06-25)
     restart: unless-stopped
@@ -56,22 +43,14 @@ services:
         condition: service_healthy
       llamacpp:
         condition: service_started            # يبدأ مع إقلاع المحرّك؛ retry يغطّي زمن تحميل الموديل
-      memory:
-        condition: service_healthy            # الذاكرة جاهزة قبل البوّابة
-      embeddings:
-        condition: service_started            # البوّابة تخدم embed-default بتمرير لمحرّك التضمين (ADR-023)
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY مفقود}   # fail-fast (R-ERR-02)
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?LITELLM_SALT_KEY مفقود}
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}@postgres:5432/litellm
       LLAMACPP_API_KEY: ${LLAMACPP_API_KEY:?LLAMACPP_API_KEY مفقود}   # يطابق --api-key للمحرّك
       LITELLM_LOG: ${LITELLM_LOG:-INFO}                              # مستوى السجل (R-ERR-17)
-      CTX_MODEL_WINDOW: ${CTX_MODEL_WINDOW:-4096}                    # ميزانية حقن الذاكرة واعية بالنافذة (ADR-021)
-      CTX_RESERVED_TOKENS: ${CTX_RESERVED_TOKENS:-2560}             # محجوز للجواب + الرسائل الحيّة
-      CTX_INJECTION_BUDGET: ${CTX_INJECTION_BUDGET:-1000}          # سقف الحقن المرغوب (يُقصّ بـ window-reserved)
     volumes:
       - ../config/litellm/litellm-config.yaml:/app/config.yaml:ro
-      - ../config/litellm/memory_hook.py:/app/custom_hook.py:ro   # hook الذاكرة per-user (ADR-012)
     command: ["--config", "/app/config.yaml", "--port", "4000"]
     networks: [internal]
     healthcheck:
@@ -82,7 +61,7 @@ services:
       retries: 5
       start_period: 40s
 
-  open-webui:                                # الواجهة — نقطة الدخول الوحيدة المكشوفة
+  open-webui:                                # الواجهة — نقطة الدخول الوحيدة المكشوفة؛ تملك RAG + Memory (ADR-025)
     image: ghcr.io/open-webui/open-webui@sha256:7f1b0a1a50cfbac23da3b16f96bc968fd757b26dc9e54e93813d61768ea9184e   # main مُثبَّت بـ digest (2026-06-25)
     restart: unless-stopped
     depends_on:
@@ -93,9 +72,9 @@ services:
       OPENAI_API_KEY: ${OPENWEBUI_LITELLM_KEY:?OPENWEBUI_LITELLM_KEY مفقود}   # virtual key من litellm
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY مفقود}
       GLOBAL_LOG_LEVEL: ${WEBUI_LOG_LEVEL:-INFO}              # مستوى السجل (R-ERR-17)
-      ENABLE_FORWARD_USER_INFO_HEADERS: "true"               # يمرّر X-OpenWebUI-User-* للبوّابة (للذاكرة per-user)
       WEBUI_NAME: ${WEBUI_NAME:-Sankari Chat}                 # اسم التطبيق/الواجهة المعروض (علامة، ليس اسم الموديل — ADR-017)
       ENABLE_EVALUATION_ARENA_MODELS: "false"                # نُطفئ موديل Arena الافتراضي (نريد موديلاً واحداً يظهر — Gemma 4)
+      ENABLE_MEMORIES: "true"                                # ميزة الذاكرة per-user المدمجة (سطح الحقائق الفعّال — ADR-025)
     volumes:
       - openwebui-data:/app/backend/data
     ports:
@@ -124,29 +103,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
-  memory:                                    # خدمة الذاكرة per-user (Context Engine L2) — ADR-019/023
-    build: ../services/memory
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      # لا اعتماد على litellm (تجنّب دورة الاعتماد litellm↔memory)؛ التضمين عبر البوّابة fail-soft
-      # عند الإقلاع حتى تجهز البوّابة، ثم يعمل طبيعياً على المسار الحارّ (ADR-023).
-    environment:
-      MEMORY_DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}@postgres:5432/litellm
-      EMBEDDINGS_URL: http://litellm:4000/v1                                 # عبر البوّابة لا المحرّك (R-ARCH-10، ADR-023)
-      EMBEDDINGS_API_KEY: ${MEMORY_LITELLM_KEY:?MEMORY_LITELLM_KEY مفقود}    # virtual key مخصّص لـ memory (لا master/مفتاح محرّك)
-      EMBEDDINGS_MODEL: embed-default                                        # موديل التضمين في litellm-config
-      EMBEDDING_MODEL_VERSION: qwen3-emb-0.6b-q8@1024                        # المتجه متطابق بايتياً عبر البوّابة → لا re-embedding
-      CTX_QUERY_INSTRUCTION: "${CTX_QUERY_INSTRUCTION:-Given a user message, retrieve stored facts and past context about the user relevant to it.}"   # تعليمة استعلام Qwen3 (M2)
-    networks: [internal]                      # داخلية فقط (غير مكشوفة)
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8088/health').status==200 else 1)\""]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 20s
 
 networks:
   internal:

@@ -10,10 +10,10 @@
 - **الخطأ يبلّغ عن نفسه**: JSON + `request_id` عبر الطبقات، لا ابتلاع صامت (ERROR_AND_OBSERVABILITY_POLICY).
 
 ## بوّابة الجودة (محلياً قبل كل commit)
+المسار الأساسي بلا كود بايثون (محرّك السياق متقاعد إلى فرع `future/context-engine`، ADR-025):
 ```bash
-.venv/Scripts/python -m ruff check . && .venv/Scripts/python -m ruff format --check .
-MYPYPATH=services/memory .venv/Scripts/python -m mypy --config-file pyproject.toml services/memory/*.py config/litellm/memory_hook.py
-.venv/Scripts/python -m pytest -q           # وحدات؛ التكامل عبر MEMORY_TEST_DATABASE_URL
+ruff check . && ruff format --check .        # lint/format (يمرّ بلا ملفات بايثون)
+docker compose -f compose/docker-compose.yml --env-file /tmp/ci.env config -q   # صحّة compose
 pre-commit install                           # يفرض نفس فحوص CI على كل commit
 ```
 نفس الفحوص تُفرَض في CI ([.github/workflows/ci.yml](workflows/ci.yml)). كل تغيير ذي قيمة يمرّ ببوّابة مراجعة §4.
