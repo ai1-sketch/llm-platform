@@ -44,9 +44,9 @@
 
 - **R-ARCH-01** — لكل مجلد جذري **مسؤولية واحدة** كما في الجدول. ممنوع خلط نوعين (لا `*.yaml` إعداد داخل `compose/`، ولا compose داخل `config/`). فحص: مراجعة المسار مقابل الجدول.
 - **R-ARCH-02** — `models/`، `config/env/.env`، وأي `*.override.yml` محلي **مُدرَجة في `.gitignore`** ولا تُرفع أبداً. فحص CI: `git ls-files | grep -E '(^models/|\.env$)'` يجب أن يعيد فراغاً.
-- **R-ARCH-03** — جذر المستودع يحوي فقط: وثائق الحوكمة العليا (`CLAUDE.md`، `PROJECT_BLUEPRINT.md`، `README.md`)، وإعداد الأدوات (`pyproject.toml`، `.pre-commit-config.yaml`، `.gitignore`)، و`.github/`. **لا أسرار** في الجذر؛ كل إعداد تطبيقي مكانه `config/`. فحص: قائمة الجذر مقابل هذه القائمة البيضاء (ADR-018).
+- **R-ARCH-03** — جذر المستودع يحوي فقط: وثائق الحوكمة العليا (`CLAUDE.md`، `PROJECT_BLUEPRINT.md`، `README.md`)، إعداد الأدوات (`pyproject.toml`، `.pre-commit-config.yaml`، `.gitignore`، `.editorconfig`)، ملفّات المشروع المعيارية (`LICENSE`)، و`.github/` (تحوي `SECURITY.md`، `CONTRIBUTING.md`، `CODEOWNERS`، `workflows/`). **لا أسرار** في الجذر؛ كل إعداد تطبيقي مكانه `config/`. فحص: قائمة الجذر مقابل هذه القائمة البيضاء (ADR-018).
 - **R-ARCH-04** — كل وثائق الحوكمة تحت `docs/` فقط؛ الروابط المتبادلة بينها **نسبية ومجاورة** (`./X.md`). فحص: link-checker لا يجد رابطاً معطّلاً (dangling).
-- **R-ARCH-05** — أي ملف وثيقة هندسية **< 180 سطراً** (حدّ صارم؛ CI يفشل عند 180 فأكثر). تجاوز ذلك يستوجب التقسيم. الإيجاز فضيلة.
+- **R-ARCH-05** — وثائق الحوكمة **الأساسية** (CONSTITUTION · ARCHITECTURE_RULES · ERROR_AND_OBSERVABILITY_POLICY · PROGRESS_MAP) يُستحسن أن تكون **< 180 سطراً** (إرشادي بمراجعة بشرية — Ruff بلا قاعدة طول-ملف، [ADR-008](DECISIONS.md)؛ لا بوّابة CI). الإيجاز فضيلة، والتجاوز يستوجب التقسيم. **مُعفى:** سجلّ ADR ([DECISIONS](DECISIONS.md)، ينمو append-only) · `docs/specs/` · `research/` · [PROJECT_BLUEPRINT](../PROJECT_BLUEPRINT.md) (مرجع موسوعي).
 
 > `services/` أُنشئ فعلاً (خدمة `memory`، [ADR-012](DECISIONS.md)/[ADR-013](DECISIONS.md))؛ `infra/` **لا يُنشأ الآن** (YAGNI، يُنشأ بقرار ADR عند الحاجة).
 

@@ -1,0 +1,6 @@
+# CODEOWNERS — مراجعة افتراضية لكل تغيير. استبدل @ai1-sketch بمعرّف GitHub للمالك/الفريق.
+* @ai1-sketch
+
+# الحوكمة والقرارات المعمارية تتطلّب عناية خاصّة
+/docs/         @ai1-sketch
+/CLAUDE.md     @ai1-sketch
