@@ -7,6 +7,7 @@ OpenAI /v1/embeddings) ويحوّل المتجه لصيغة pgvector. الإعد
 
 from __future__ import annotations
 
+import math
 import os
 
 import httpx
@@ -51,5 +52,8 @@ async def embed_query(text: str, request_id: str | None = None) -> list[float]:
 
 
 def to_pgvector(vec: list[float]) -> str:
-    """صيغة pgvector النصّية '[v1,v2,...]' (تُمرَّر كنص وتُحوَّل ::halfvec في SQL)."""
+    """صيغة pgvector النصّية '[v1,v2,...]' (تُمرَّر كنص وتُحوَّل ::halfvec في SQL).
+    يرفض القيم غير المنتهية (inf/nan) — تكسر cast الـ halfvec؛ الرفع يُلتقط fail-soft."""
+    if not all(math.isfinite(x) for x in vec):
+        raise ValueError("non-finite value in embedding vector")
     return "[" + ",".join(repr(float(x)) for x in vec) + "]"

@@ -70,7 +70,7 @@ Context Builder (خط أنابيب حتمي v1):
 <a id="4-القرارات-المقفلة"></a>
 ## 4. القرارات المقفلة
 1. **3 جداول لكل-مصدر** (نطوّر `memory.user_memory` مكانه؛ conversation + file جداول خاصة). `Normalize` = مُحوِّل `normalize(native_row)->MemoryItem`؛ المراحل التالية لا ترى شكل المخزن.
-2. **عقد واحد = `MemoryItem`** (Pydantic). يحمل `embedding_ref` (وصف) **لا متجهات خام**؛ متجهات الـ dedup عبر **قناة جانبية** `dict[item_id→vector]` من Retrieve؛ `provenance` كائن مُهيكَل (Rank يقرأ `provenance.origin`).
+2. **عقد واحد = `MemoryItem`** (Pydantic). يحمل `embedding_ref` (وصف) **لا متجهات خام**؛ **v1: dedup بـ `content_hash`** (قناة المتجهات الجانبية `dict[item_id→vector]` لتشابه ≥0.88 = v2)؛ `provenance` كائن مُهيكَل (Rank يقرأ `provenance.origin`).
 3. **مفردات موحّدة:** مفتاح العزل `user_id` · PK `bigserial` + `item_id` (`gen_random_uuid` UUIDv4؛ uuidv7 مؤجَّل، [ADR-024](../DECISIONS.md)) · `status` enum `{active|archived|superseded|deleted}` · `content`↔`text` يُوحَّد مرّة في Normalize.
 4. **تبديل صورة pgvector = خطوة صفر** (ADR-020 يعدّل P-01؛ digest جديد + checkpoint قبل/بعد).
 5. **تثبيت بُعد التضمين** بقياس الموديل **قبل أي `ALTER TABLE`**؛ البُعد **مُصدَّر بالإصدار** (تغييره = عمود v2 + backfill).
@@ -103,10 +103,10 @@ Context Builder (خط أنابيب حتمي v1):
 <a id="6-خط-الأنابيب"></a>
 ## 6. خط الأنابيب: Retrieve → Normalize → Rank → Compose
 
-- **Retrieve:** بوّابات رخيصة حتمية (هل للمستخدم ملفات؟ محادثة طويلة؟ ملف رُفع؟) → استعلام المخازن المرشّحة **بالتوازي**؛ لكل مخزن **هجين**: dense (pgvector/HNSW على halfvec) + lexical (tsvector) مدموجان بـ **RRF (k=60)**؛ تطبيق `relevance_threshold` و `retrieval_top_k`. يُصدِر `relevance_raw` موحّد + قناة المتجهات الجانبية. بلا LLM.
+- **Retrieve:** بوّابات رخيصة حتمية (هل للمستخدم ملفات؟ محادثة طويلة؟ ملف رُفع؟) → استعلام المخازن المرشّحة **بالتوازي**؛ لكل مخزن **هجين**: dense (pgvector/HNSW على halfvec) + lexical (tsvector) مدموجان بـ **RRF (k=60)**؛ تطبيق `retrieval_top_k` (عبر `CTX_RETRIEVAL_TOP_K`؛ `relevance_threshold` = v2). يُصدِر درجة RRF لكل مرشّح (قناة المتجهات الجانبية للـ dedup-بالتشابه = v2). بلا LLM.
 - **Normalize:** `normalize(native_row)->MemoryItem` لكل مخزن؛ توحيد `content↔text` و`status` والـ provenance هنا. بعد هذه المرحلة لا أحد يعرف مصدر الصفّ.
-- **Rank:** `Score = w_rel·Rel + w_rec·Rec + w_imp·Imp + w_conf·Conf`؛ `Rel` min-max **لكل طلب** عبر المجموعة المدموجة؛ `Rec` تحلّل بنصف-عمر؛ `Imp/Conf` من الأعمدة (لا LLM). أوزان **لكل نوع** (ملفات: Rel غالب؛ محادثة: +Rec؛ حقائق: currency).
-- **Compose (+ Budget Manager):** النافذة من الإعداد (`CTX_MODEL_WINDOW`، [ADR-021](../DECISIONS.md)) → `budget = min(CTX_INJECTION_BUDGET, window − CTX_RESERVED_TOKENS)` → تخصيص بحصص قابلة للضبط ثم ملء بالترتيب → **dedup** بالتشابه (≥0.88 عبر القناة الجانبية، أو `content_hash`) → اختيار تمثيل (كامل/مقاطع) بالحجم → ترتيب U-shaped (تخفيف lost-in-the-middle) → كتلة محصورة (سياج "بيانات لا تعليمات" ضد الحقن) → **تأكيد `injected+reserved ≤ window`**.
+- **Rank:** `Score = w_rel·Rel + w_rec·Rec + w_imp·Imp + w_conf·Conf`؛ `Rel` min-max **لكل طلب** عبر المجموعة المدموجة؛ `Rec` تحلّل بنصف-عمر؛ `Imp/Conf` من الأعمدة (لا LLM). **v1: أوزان عامة موحّدة** (`CTX_W_*`)؛ أوزان **لكل نوع** (ملفات: Rel غالب؛ محادثة: +Rec) = **مؤجَّل v2**.
+- **Compose (+ Budget Manager):** النافذة من الإعداد (`CTX_MODEL_WINDOW`، [ADR-021](../DECISIONS.md)) → `budget = min(CTX_INJECTION_BUDGET, window − CTX_RESERVED_TOKENS)` → ملء بالترتيب → **dedup** (v1: `content_hash`؛ تشابه ≥0.88 عبر القناة الجانبية = v2) → **ترتيب بالرتبة** (v1؛ U-shaped لتخفيف lost-in-the-middle = v2) → كتلة محصورة بنود مُعقَّمة الأسطر (سياج "بيانات لا تعليمات" ضد الحقن) → **تأكيد `injected ≤ budget`** (وبما أن byte-count ≥ real ⇒ ضمن النافذة).
 
 <a id="7-الorchestrator"></a>
 ## 7. الـ Orchestrator: الواجهة ومسار الكتابة
@@ -158,7 +158,7 @@ Context Builder (خط أنابيب حتمي v1):
 
 <a id="14-المؤجل"></a>
 ## 14. المؤجَّل لـ v2 (صريح، خلف نفس العقود)
-التلخيص بـ LLM + High/Low-Water · RAPTOR/هرمي · parent/child + Excel-row + إصدارات الملفات · RLS كامل + virtual keys per-user + تجريد header · Reflection memory · LLM router · ضغط/دمج بـ LLM · طابور كتابة دائم · config framework متقدّم.
+التلخيص بـ LLM + High/Low-Water · RAPTOR/هرمي · parent/child + Excel-row + إصدارات الملفات · RLS كامل + virtual keys per-user + تجريد header · Reflection memory · LLM router · ضغط/دمج بـ LLM · طابور كتابة دائم · config framework متقدّم · **Compose/Rank متقدّم: dedup بالتشابه (≥0.88) + ترتيب U-shaped + أوزان Rank لكل-نوع** · tokenizer دقيق (engine /tokenize).
 
 <a id="15-المخاطر"></a>
 ## 15. المخاطر والأسئلة المفتوحة

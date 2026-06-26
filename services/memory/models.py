@@ -2,7 +2,7 @@
 عقد `MemoryItem` — المغلّف المصدر-المحايد للـ Context Engine (ADR-019، M1).
 كل مخزن (user/conversation/file) يُطبَّع إلى هذا الشكل عبر `normalize`؛ المراحل التالية
 (Rank/Compose) لا ترى شكل الصفّ الأصلي. يحمل `embedding_ref` (وصفاً) لا متجهات خام —
-متجهات الـ dedup تُمرَّر عبر قناة جانبية (M3). reflection محجوز لـ v2 (بلا صفوف الآن).
+الـ dedup في v1 بـ `content_hash` (قناة المتجهات الجانبية + تشابه ≥0.88 = v2). reflection محجوز v2.
 """
 
 from __future__ import annotations

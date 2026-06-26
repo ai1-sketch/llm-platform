@@ -37,8 +37,14 @@ class ComposeResult(NamedTuple):
     tokens: int
 
 
+def _sanitize(text: str) -> str:
+    # نمنع عنصراً من حقن أسطر/بنية في الكتلة (تخفيف تسميم — OWASP). splitlines يغطّي كل فواصل
+    # الأسطر (\n \r \v \f وU+2028/U+2029) → مسافة واحدة؛ لا يزيد البايتات (الميزانية تبقى صالحة).
+    return " ".join(text.splitlines())
+
+
 def _render(items: list[MemoryItem]) -> str:
-    return "\n".join([BLOCK_HEADER, *(f"- {it.text}" for it in items)])
+    return "\n".join([BLOCK_HEADER, *(f"- {_sanitize(it.text)}" for it in items)])
 
 
 def compose_context(

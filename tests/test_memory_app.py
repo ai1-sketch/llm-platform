@@ -65,6 +65,19 @@ def test_add_blank_content_400(client):
     assert r.status_code == 400  # فراغ بعد التشذيب
 
 
+def test_error_shape_unified_on_400(client):
+    # خطأ العميل يعيد شكل OpenAI الموحّد (code + message + type + request_id) — R-ERR-06
+    c, _ = client
+    r = c.post(
+        "/v1/memories", json={"user_id": "u1", "content": "   "}, headers={"X-Request-ID": "e1"}
+    )
+    assert r.status_code == 400
+    err = r.json()["error"]
+    assert err["code"] == "HTTP_ERROR" and err["type"] == "invalid_request_error"
+    assert err["request_id"] == "e1"
+    assert r.headers.get("x-request-id") == "e1"
+
+
 def test_delete_one_scoped(client):
     c, pool = client
     r = c.delete("/v1/memories/5", params={"user_id": "u1"})

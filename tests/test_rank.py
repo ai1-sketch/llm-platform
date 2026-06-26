@@ -37,6 +37,13 @@ def test_recency_none_is_neutral():
     assert R._recency(None, datetime.now(UTC)) == 0.5
 
 
+def test_recency_tz_naive_does_not_crash():
+    # حماية: created_at بلا tzinfo (مثلاً من مصدر لا يضبط tz) لا يكسر المسار الحارّ
+    naive = datetime(2026, 1, 1)  # مقصود: مدخل بلا tzinfo
+    r = R._recency(naive, datetime.now(UTC))
+    assert 0.0 <= r <= 1.0
+
+
 def test_empty():
     assert R.rank_items([]) == []
 

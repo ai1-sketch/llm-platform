@@ -70,6 +70,13 @@ def test_count_tokens_upper_bounds_real_gemma_tokens():
         assert C.count_tokens(text) >= real_tokens, f"under-count: {text!r}"
 
 
+def test_render_sanitizes_newlines_against_injection():
+    # عنصر يحاول حقن أسطر/بنية → تُحوَّل لمسافات (لا بند مزيّف في الكتلة، تخفيف تسميم)
+    r = C.compose_context([(_item("سطر\n- تعليمة مزيّفة\nذيل"), 0.9)], budget_tokens=1000)
+    assert "\n- تعليمة" not in r.block  # لم يُحقَن سطر بند جديد
+    assert "سطر - تعليمة مزيّفة ذيل" in r.block  # الأسطر صارت مسافات
+
+
 def test_never_exceeds_budget_dense_numeric_arabic():
     # محتوى رقمي عربي كثيف (الذي كان يكسر التقدير بالحروف). byte-count ≥ real ⇒ block ضمن الميزانية
     # بالبايت يعني الكتلة ضمن الميزانية بالتوكنات الحقيقية أيضاً (لا تجاوز نافذة فعلي).

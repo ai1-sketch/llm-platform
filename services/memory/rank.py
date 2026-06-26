@@ -31,6 +31,8 @@ def _minmax(vals: list[float]) -> list[float]:
 def _recency(created_at: datetime | None, now: datetime) -> float:
     if created_at is None:
         return 0.5
+    if created_at.tzinfo is None:  # حماية: نفترض UTC لو غاب tzinfo (تجنّب طرح aware-naive المتعطّل)
+        created_at = created_at.replace(tzinfo=UTC)
     age_days = max(0.0, (now - created_at).total_seconds() / 86400.0)
     return 0.5 ** (age_days / RECENCY_HALFLIFE_DAYS)
 

@@ -15,6 +15,7 @@ import asyncpg
 from arabic import normalize_ar
 from embeddings import EMBEDDING_MODEL_VERSION, embed_one, to_pgvector
 from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from obs import log as _log
 from pydantic import BaseModel, Field
 from rank import rank_items
@@ -27,6 +28,8 @@ DB_URL = os.environ.get("MEMORY_DATABASE_URL")
 if not DB_URL:  # fail-fast (R-ERR-02): لا نبدأ بإعداد ناقص — خطأ يسمّي المتغيّر
     _log("CRITICAL", "CONFIG_MISSING_KEY", "MEMORY_DATABASE_URL مفقود — لا يمكن بدء خدمة الذاكرة")
     raise SystemExit(1)
+
+ASSEMBLE_TOP_K = int(os.environ.get("CTX_RETRIEVAL_TOP_K", "12"))  # config-driven (المواصفة §10)
 
 pool: asyncpg.Pool | None = None
 
@@ -81,6 +84,28 @@ async def _request_log(request: Request, call_next):
     )
     response.headers["X-Request-ID"] = request_id
     return response
+
+
+def _error_body(code: str, message: str, type_: str, request_id: str | None) -> dict:
+    """شكل خطأ موحّد متوافق مع OpenAI (R-ERR-04/06): code + message + request_id + type."""
+    return {"error": {"code": code, "message": message, "type": type_, "request_id": request_id}}
+
+
+@app.exception_handler(HTTPException)
+async def _http_exc_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    rid = request.headers.get("x-request-id")
+    body = _error_body("HTTP_ERROR", str(exc.detail), "invalid_request_error", rid)
+    return JSONResponse(
+        status_code=exc.status_code, content=body, headers={"X-Request-ID": rid or ""}
+    )
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exc_handler(request: Request, exc: Exception) -> JSONResponse:
+    rid = request.headers.get("x-request-id")
+    _log("ERROR", "INTERNAL_ERROR", f"unhandled {type(exc).__name__} at {request.url.path}", rid)
+    body = _error_body("INTERNAL_ERROR", "internal error", "internal_error", rid)
+    return JSONResponse(status_code=500, content=body, headers={"X-Request-ID": rid or ""})
 
 
 class AddReq(BaseModel):
@@ -198,7 +223,9 @@ async def retrieve_endpoint(req: RetrieveReq, request: Request):
 async def assemble_endpoint(req: AssembleReq, request: Request):
     """مسار القراءة الكامل: retrieve → rank → compose. يُرجِع كتلة سياق ضمن الميزانية (M3)."""
     rid = request.headers.get("x-request-id")
-    candidates = await retrieve(_require_pool(), req.user_id, req.query, top_k=12, request_id=rid)
+    candidates = await retrieve(
+        _require_pool(), req.user_id, req.query, top_k=ASSEMBLE_TOP_K, request_id=rid
+    )
     ranked = rank_items(candidates)
     result = compose_context(ranked, req.budget_tokens)
     return {
