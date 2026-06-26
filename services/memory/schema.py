@@ -92,6 +92,9 @@ def build_schema_ddl() -> str:
         _indexes("user_memory", None, "idx_user_memory_user"),
         _indexes("conversation_memory", "conversation_id", "conversation_memory_user_idx"),
         _indexes("file_memory", "file_id", "file_memory_user_idx"),
+        # التقاط محادثة idempotent (M4b): لا تكرار لنفس النص المُطبَّع داخل نفس المحادثة (ON CONFLICT)
+        "CREATE UNIQUE INDEX IF NOT EXISTS conversation_memory_dedup_uidx "
+        "ON memory.conversation_memory (user_id, conversation_id, content_hash);",
     ]
     return "\n\n".join(parts) + "\n"
 

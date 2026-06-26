@@ -195,6 +195,66 @@ def test_hook_skips_injection_when_budget_nonpositive(monkeypatch, capsys):
     assert out["messages"][0]["content"] == "ما لوني؟"  # المحادثة لم تنكسر
 
 
+# ── M4b: التقاط المحادثة (جسر pre_call→log_success) ──
+def test_hook_stashes_then_captures(monkeypatch):
+    rec = _install_fake_httpx(monkeypatch, assemble_block="ctx")
+    mh._PENDING.clear()
+    data = {
+        "litellm_call_id": "cap-1",
+        "proxy_server_request": {
+            "headers": {"x-openwebui-user-id": "u1", "x-openwebui-chat-id": "chat-1"}
+        },
+        "messages": [{"role": "user", "content": "أنا أحب القهوة"}],
+    }
+    _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
+    assert "cap-1" in mh._PENDING  # خُزِّن سياق الدور في pre_call
+    resp = {"choices": [{"message": {"content": "القهوة رائعة"}}]}
+    slo = {"standard_logging_object": {"litellm_call_id": "cap-1", "model": "Gemma 4"}}
+    _run(mh.MemoryHook().async_log_success_event(slo, resp, None, None))
+    assert "cap-1" not in mh._PENDING  # أُفرِغ بعد الالتقاط
+    cap = next(c for c in rec["calls"] if "/v1/conversation/capture" in c[1])
+    body = cap[2]
+    assert body["user_id"] == "u1" and body["conversation_id"] == "chat-1"
+    assert [t["role"] for t in body["turns"]] == ["user", "assistant"]
+    assert body["turns"][0]["content"] == "أنا أحب القهوة"
+    assert body["turns"][1]["content"] == "القهوة رائعة"
+
+
+def test_hook_capture_skips_unstashed_call(monkeypatch):
+    # أمان الحلقة: نداء التضمين الداخلي (call_id غير مُخزَّن) لا يُحدِث التقاطاً
+    rec = _install_fake_httpx(monkeypatch)
+    mh._PENDING.clear()
+    slo = {"standard_logging_object": {"litellm_call_id": "embed-xyz", "model": "embed-default"}}
+    _run(mh.MemoryHook().async_log_success_event(slo, {"choices": []}, None, None))
+    assert not any("/v1/conversation/capture" in c[1] for c in rec["calls"])
+
+
+def test_hook_no_stash_without_chat_id(monkeypatch):
+    mh._PENDING.clear()
+    _install_fake_httpx(monkeypatch, assemble_block="ctx")
+    data = {
+        "litellm_call_id": "nc-1",
+        "proxy_server_request": {"headers": {"x-openwebui-user-id": "u1"}},
+        "messages": [{"role": "user", "content": "hi"}],
+    }
+    _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
+    assert "nc-1" not in mh._PENDING  # بلا chat-id لا scoping → لا التقاط
+
+
+def test_hook_no_stash_for_remember(monkeypatch):
+    mh._PENDING.clear()
+    _install_fake_httpx(monkeypatch, assemble_block="ctx")
+    data = {
+        "litellm_call_id": "rem-x",
+        "proxy_server_request": {
+            "headers": {"x-openwebui-user-id": "u1", "x-openwebui-chat-id": "chat-1"}
+        },
+        "messages": [{"role": "user", "content": "تذكّر: شيء"}],
+    }
+    _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
+    assert "rem-x" not in mh._PENDING  # أوامر 'تذكّر:' تُخزَّن صراحةً، لا تُلتقَط كمحادثة
+
+
 def test_success_event_cost_log(capsys):
     kwargs = {
         "standard_logging_object": {

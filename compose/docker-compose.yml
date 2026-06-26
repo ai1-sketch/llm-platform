@@ -69,6 +69,7 @@ services:
       CTX_MODEL_WINDOW: ${CTX_MODEL_WINDOW:-4096}                    # ميزانية حقن الذاكرة واعية بالنافذة (ADR-021)
       CTX_RESERVED_TOKENS: ${CTX_RESERVED_TOKENS:-2560}             # محجوز للجواب + الرسائل الحيّة
       CTX_INJECTION_BUDGET: ${CTX_INJECTION_BUDGET:-1000}          # سقف الحقن المرغوب (يُقصّ بـ window-reserved)
+      CTX_CAPTURE_CONVERSATION: ${CTX_CAPTURE_CONVERSATION:-true}   # التقاط أدوار المحادثة تلقائياً (M4b)
     volumes:
       - ../config/litellm/litellm-config.yaml:/app/config.yaml:ro
       - ../config/litellm/memory_hook.py:/app/custom_hook.py:ro   # hook الذاكرة per-user (ADR-012)
@@ -140,6 +141,8 @@ services:
       EMBEDDINGS_MODEL: embed-default                                        # موديل التضمين في litellm-config
       EMBEDDING_MODEL_VERSION: qwen3-emb-0.6b-q8@1024                        # المتجه متطابق بايتياً عبر البوّابة → لا re-embedding
       CTX_QUERY_INSTRUCTION: "${CTX_QUERY_INSTRUCTION:-Given a user message, retrieve stored facts and past context about the user relevant to it.}"   # تعليمة استعلام Qwen3 (M2)
+      CTX_CAPTURE_MAX_CHARS: ${CTX_CAPTURE_MAX_CHARS:-2000}                  # سقف طول الدور المُلتقَط (M4b)
+      CTX_CONVERSATION_IMPORTANCE: ${CTX_CONVERSATION_IMPORTANCE:-0.4}       # أهمية أدوار المحادثة (< الحقائق)
     networks: [internal]                      # داخلية فقط (غير مكشوفة)
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8088/health').status==200 else 1)\""]

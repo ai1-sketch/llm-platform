@@ -30,6 +30,12 @@ if not DB_URL:  # fail-fast (R-ERR-02): لا نبدأ بإعداد ناقص — 
     raise SystemExit(1)
 
 ASSEMBLE_TOP_K = int(os.environ.get("CTX_RETRIEVAL_TOP_K", "12"))  # config-driven (المواصفة §10)
+CAPTURE_MAX_CHARS = int(
+    os.environ.get("CTX_CAPTURE_MAX_CHARS", "2000")
+)  # سقف طول الدور المُلتقَط (M4b)
+CONVERSATION_IMPORTANCE = float(
+    os.environ.get("CTX_CONVERSATION_IMPORTANCE", "0.4")
+)  # < حقائق المستخدم
 
 pool: asyncpg.Pool | None = None
 
@@ -119,6 +125,18 @@ class RetrieveReq(BaseModel):
     top_k: int = 8
 
 
+class CaptureTurn(BaseModel):
+    role: str = Field(min_length=1)
+    content: str
+    source_ref: str | None = None  # message_id للـ provenance
+
+
+class CaptureReq(BaseModel):
+    user_id: str = Field(min_length=1)
+    conversation_id: str = Field(min_length=1)
+    turns: list[CaptureTurn]
+
+
 class AssembleReq(BaseModel):
     user_id: str = Field(min_length=1)
     query: str = Field(min_length=1)
@@ -131,6 +149,16 @@ def _require_pool() -> "asyncpg.Pool":
     if pool is None:
         raise RuntimeError("pool not initialized")
     return pool
+
+
+async def _embed_or_none(norm: str, rid: str | None) -> tuple[str | None, str | None]:
+    """تضمين fail-soft مشترك: يُرجِع (vec_literal, model_version) أو (None, None) مع سجلّ عند العطل.
+    العنصر يُخزَّن بلا متجه ويُسترجَع لفظياً — العطل لا يُفقد البيانات (R-ERR، ADR-019)."""
+    try:
+        return to_pgvector(await embed_one(norm, request_id=rid)), EMBEDDING_MODEL_VERSION
+    except Exception as e:  # noqa: BLE001 — fail-soft مقصود؛ نسجّله بـ code ولا نكسر الكتابة
+        _log("WARN", "EMBED_FAILED", f"stored without vector: {type(e).__name__}", rid)
+        return None, None
 
 
 @app.get("/health")
@@ -160,14 +188,7 @@ async def add_memory(req: AddReq, request: Request):
         1, len(content) // 4
     )  # تقدير كتابة-وقت تقريبي؛ ميزانية القراءة الفعلية = byte-count في Compose (ADR-021)
     rid = request.headers.get("x-request-id")  # سلسلة معرّف الطلب للبوّابة (R-ERR-19)
-    # التضمين fail-soft: عطل خدمة التضمين لا يُفقد الحقيقة (تُخزَّن بلا متجه وتُسترجَع لفظياً)
-    vec_literal: str | None = None
-    model_version: str | None = None
-    try:
-        vec_literal = to_pgvector(await embed_one(norm, request_id=rid))
-        model_version = EMBEDDING_MODEL_VERSION
-    except Exception as e:  # noqa: BLE001 — fail-soft مقصود؛ نسجّله ولا نكسر الكتابة
-        _log("WARN", "EMBED_FAILED", f"stored without vector: {type(e).__name__}")
+    vec_literal, model_version = await _embed_or_none(norm, rid)  # fail-soft مشترك
     row = await _require_pool().fetchrow(
         "INSERT INTO memory.user_memory "
         "(user_id, content, content_hash, token_estimate, embedding, "
@@ -234,3 +255,47 @@ async def assemble_endpoint(req: AssembleReq, request: Request):
         "tokens": result.tokens,
         "budget_tokens": req.budget_tokens,
     }
+
+
+async def _store_turn(
+    user_id: str, conversation_id: str, turn: CaptureTurn, rid: str | None
+) -> bool:
+    """يخزّن دوراً في conversation_memory (idempotent بـ ON CONFLICT). True إن أُدرِج فعلاً."""
+    content = turn.content.strip()[:CAPTURE_MAX_CHARS]
+    if not content:
+        return False
+    norm = normalize_ar(content)
+    content_hash = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+    token_estimate = max(1, len(content) // 4)
+    vec_literal, model_version = await _embed_or_none(norm, rid)
+    row = await _require_pool().fetchrow(
+        "INSERT INTO memory.conversation_memory "
+        "(user_id, conversation_id, content, content_hash, token_estimate, embedding, "
+        " embedding_model_version, content_tsv, source_type, origin, writer, source_ref, "
+        " importance) "
+        "VALUES($1, $2, $3, $4, $5, $6::halfvec, $7, to_tsvector('simple', $8), "
+        " 'conversation_chunk', 'conversation_turn', 'hook', $9, $10) "
+        "ON CONFLICT (user_id, conversation_id, content_hash) DO NOTHING RETURNING id",
+        user_id,
+        conversation_id,
+        content,
+        content_hash,
+        token_estimate,
+        vec_literal,
+        model_version,
+        norm,
+        turn.source_ref,
+        CONVERSATION_IMPORTANCE,
+    )
+    return row is not None
+
+
+@app.post("/v1/conversation/capture")
+async def capture_conversation(req: CaptureReq, request: Request):
+    """التقاط أدوار المحادثة (M4b، ذاكرة عرضية) في conversation_memory؛ dedup بـ content_hash."""
+    rid = request.headers.get("x-request-id")
+    captured = 0
+    for turn in req.turns:
+        if await _store_turn(req.user_id, req.conversation_id, turn, rid):
+            captured += 1
+    return {"captured": captured, "received": len(req.turns)}

@@ -93,6 +93,68 @@ def test_clear_all_scoped(client):
     assert "u2" in pool.execute.call_args.args
 
 
+def test_capture_conversation_scoped(client, monkeypatch):
+    c, pool = client
+
+    async def _fe(_t, request_id=None):
+        return [0.1] * 1024
+
+    monkeypatch.setattr(appmod, "embed_one", _fe)
+    r = c.post(
+        "/v1/conversation/capture",
+        json={
+            "user_id": "u1",
+            "conversation_id": "c1",
+            "turns": [
+                {"role": "user", "content": "أنا أحب القهوة"},
+                {"role": "assistant", "content": "القهوة رائعة"},
+            ],
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["captured"] == 2 and body["received"] == 2
+    args = pool.fetchrow.call_args.args  # آخر دور (assistant)
+    assert "u1" in args and "c1" in args and "القهوة رائعة" in args  # العزل + scoping + المحتوى
+
+
+def test_capture_dedup_not_counted(client, monkeypatch):
+    c, pool = client
+    pool.fetchrow = AsyncMock(return_value=None)  # ON CONFLICT DO NOTHING → لا إدراج
+
+    async def _fe(_t, request_id=None):
+        return [0.1] * 1024
+
+    monkeypatch.setattr(appmod, "embed_one", _fe)
+    r = c.post(
+        "/v1/conversation/capture",
+        json={
+            "user_id": "u1",
+            "conversation_id": "c1",
+            "turns": [{"role": "user", "content": "x"}],
+        },
+    )
+    assert r.json()["captured"] == 0  # مكرّر → غير محسوب
+
+
+def test_capture_skips_blank_turn(client, monkeypatch):
+    c, _ = client
+
+    async def _fe(_t, request_id=None):
+        return [0.1] * 1024
+
+    monkeypatch.setattr(appmod, "embed_one", _fe)
+    r = c.post(
+        "/v1/conversation/capture",
+        json={
+            "user_id": "u1",
+            "conversation_id": "c1",
+            "turns": [{"role": "user", "content": "   "}],
+        },
+    )
+    assert r.json()["captured"] == 0  # فارغ بعد التشذيب → لا إدراج
+
+
 def test_middleware_request_id(client):
     c, _ = client
     r = c.get("/v1/memories", params={"user_id": "u1"})

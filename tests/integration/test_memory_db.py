@@ -7,6 +7,7 @@
 """
 
 import asyncio
+import hashlib
 import os
 import uuid
 
@@ -51,10 +52,30 @@ async def _insert(pool, user_id, content):
         )
 
 
+async def _insert_conv(pool, user_id, conversation_id, content):
+    norm = normalize_ar(content)
+    h = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+    async with pool.acquire() as c:
+        await c.execute(
+            "INSERT INTO memory.conversation_memory "
+            "(user_id, conversation_id, content, content_hash, content_tsv, source_type, "
+            " origin, writer, importance) "
+            "VALUES ($1,$2,$3,$4, to_tsvector('simple',$5), "
+            " 'conversation_chunk','conversation_turn','hook',0.4) "
+            "ON CONFLICT (user_id, conversation_id, content_hash) DO NOTHING",
+            user_id,
+            conversation_id,
+            content,
+            h,
+            norm,
+        )
+
+
 async def _cleanup(pool, *user_ids):
     async with pool.acquire() as c:
         for u in user_ids:
             await c.execute("DELETE FROM memory.user_memory WHERE user_id=$1", u)
+            await c.execute("DELETE FROM memory.conversation_memory WHERE user_id=$1", u)
 
 
 def _no_embeddings(monkeypatch):
@@ -141,6 +162,31 @@ def test_delete_for_forgetting_real_db(monkeypatch):
             assert any("الثاني" in m.text for m, _ in r2), "u2 يجب أن يبقى سليماً"
         finally:
             await _cleanup(pool, u1, u2)
+            await pool.close()
+
+    _run(_t())
+
+
+def test_conversation_capture_dedup_and_retrieval_real_db(monkeypatch):
+    # M4b: فهرس الـ dedup (ON CONFLICT) يمنع التكرار، والمحادثة تُسترجَع عبر المخازن (عابرة للجلسات)
+    _no_embeddings(monkeypatch)
+    u = f"itest-{uuid.uuid4()}"
+
+    async def _t():
+        pool = await _pool()
+        try:
+            await _insert_conv(pool, u, "conv-x", "المستخدم يعمل مهندس طيران")
+            await _insert_conv(pool, u, "conv-x", "المستخدم يعمل مهندس طيران")  # نفس النص → dedup
+            async with pool.acquire() as c:
+                n = await c.fetchval(
+                    "SELECT count(*) FROM memory.conversation_memory WHERE user_id=$1", u
+                )
+            assert n == 1, "فهرس dedup يجب أن يمنع التكرار"
+            # المسار اللفظي (بلا embeddings): الاستعلام يجب أن يشارك توكناً مع المحتوى ("طيران")
+            res = await R.retrieve(pool, u, "طيران", tables=("conversation_memory",))
+            assert any("طيران" in m.text for m, _ in res), "المحادثة يجب أن تُسترجَع"
+        finally:
+            await _cleanup(pool, u)
             await pool.close()
 
     _run(_t())
