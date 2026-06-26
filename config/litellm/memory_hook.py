@@ -3,9 +3,9 @@ LiteLLM hook للذاكرة per-user (Context Engine) — ADR-012/013/019.
 - يقرأ الهوية من X-OpenWebUI-User-Id والمحادثة من X-OpenWebUI-Chat-Id (مُثبَتان end-to-end).
 - READ: يستدعي /v1/assemble (استرجاع دلالي + ترتيب + ميزانية) ويحقن كتلة السياق في رسالة system.
 - WRITE (HITL): عند بادئة "تذكّر:" / "remember:" يخزّن ما بعدها (المستخدم يقرّر ما يُحفظ).
-- CAPTURE (M4b، تلقائي): مهمة خلفية في pre_call (بلا كمون) تلتقط من **تاريخ الرسائل** دورَ المستخدم
-  الحالي + دورَ المساعد السابق في conversation_memory — يعمل streaming وغير-streaming (التاريخ مصدر
-  موثوق مستقلّ عن التسليم؛ آخر دور مساعد في محادثة مهجورة يُلتقَط عند الاستئناف). re-entrant-safe.
+- CAPTURE (M4b، تلقائي): يلتقط الدور (المستخدم + **إجابة الموديل** content لا reasoning) وقت
+  توليده — غير-streaming عبر `post_call_success_hook`، streaming عبر `streaming_iterator_hook`
+  (تمرير-أولاً ثم تجميع). مهمة خلفية بلا كمون. re-entrant-safe (تضمين بلا chat-id → لا التقاط).
 - fail-open: أي خطأ في الذاكرة لا يكسر المحادثة — لكنه يُسجَّل **بصوت** كسطر JSON مهيكل (R-ERR-08/14).
 - رصد (P-05): سطر JSON بالكلفة + request_id لكل طلب (success/failure event، R-ERR-15/16).
   request_id = litellm_call_id (يُضبط في البوّابة قبل الـ hook ويطابق standard_logging_object).
@@ -28,8 +28,8 @@ SERVICE = "litellm"  # هذا الكود يعمل داخل عملية البوّ
 INJECTION_BUDGET = int(os.environ.get("CTX_INJECTION_BUDGET", "1000"))  # سقف الحقن المرغوب
 MODEL_WINDOW = int(os.environ.get("CTX_MODEL_WINDOW", "4096"))  # نافذة الموديل (حدّثها عند تبديله)
 RESERVED_TOKENS = int(os.environ.get("CTX_RESERVED_TOKENS", "2560"))  # محجوز للجواب + الرسائل الحيّة
-# التقاط المحادثة (M4b): من **تاريخ الرسائل** في pre_call (مهمة خلفية، بلا كمون) — مستقلّ عن نمط
-# التسليم (streaming/غير)؛ يلتقط دور المستخدم الحالي + دور المساعد السابق. dedup يضمن idempotency.
+# التقاط المحادثة (M4b): الدور (مستخدم + إجابة الموديل) وقت توليده عبر hooks ما-بعد-الرد —
+# post_call_success (غير-streaming) + streaming_iterator (streaming). مهمة خلفية، بلا كمون، dedup.
 CAPTURE_ENABLED = os.environ.get("CTX_CAPTURE_CONVERSATION", "true").lower() == "true"
 _BG_TASKS: set = set()  # مراجع مهام الالتقاط الخلفية (يمنع جمع القمامة قبل اكتمالها)
 
@@ -60,34 +60,42 @@ def _is_remember(text):
     return any(text.lower().startswith(p.lower()) for p in REMEMBER_PREFIXES)
 
 
-def _recent_turns(messages):
-    """آخر دور مستخدم (غير 'تذكّر:') + آخر دور مساعد من تاريخ المحادثة — للالتقاط idempotent.
-    التاريخ مصدر موثوق مستقلّ عن نمط التسليم (يحوي ردود المساعد السابقة كاملةً، عكس deltas)."""
-    turns = []
+def _content_of(response):
+    """نصّ **الإجابة** (message.content) من ModelResponse — نتجاهل reasoning_content (تفكير)."""
+    try:
+        choices = getattr(response, "choices", None)
+        if not choices:
+            return ""
+        msg = getattr(choices[0], "message", None)
+        return (getattr(msg, "content", None) or "").strip()
+    except Exception:  # noqa: BLE001 — استخراج دفاعي
+        return ""
+
+
+def _request_ctx(data):
+    """يستخرج (user_id, chat_id, user_text) من طلب البوّابة (proxy_server_request + messages)."""
+    headers = (data.get("proxy_server_request") or {}).get("headers") or {}
+    messages = data.get("messages") or []
     last_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
-    last_assistant = next((m for m in reversed(messages) if m.get("role") == "assistant"), None)
-    if last_user:
-        tu = _text_of(last_user).strip()
-        if tu and not _is_remember(tu):
-            turns.append({"role": "user", "content": tu})
-    if last_assistant:
-        ta = _text_of(last_assistant).strip()
-        if ta:
-            turns.append({"role": "assistant", "content": ta})
-    return turns
+    user_text = _text_of(last_user).strip() if last_user else ""
+    return headers.get("x-openwebui-user-id"), headers.get("x-openwebui-chat-id"), user_text
 
 
 class MemoryHook(CustomLogger):
-    def _fire_capture(self, user_id, headers, messages, request_id):
-        """يطلق التقاط المحادثة في الخلفية (بلا كمون على المستخدم) من تاريخ الرسائل: دور المستخدم
-        الحالي + دور المساعد السابق. يعمل streaming وغير-streaming (التاريخ مستقلّ عن التسليم).
-        آمن من الحلقة: نداء التضمين الداخلي بلا chat-id في pre_call → لا التقاط."""
+    def _fire_capture(self, data, assistant_text, request_id):
+        """يطلق التقاط الدور (المستخدم + إجابة الموديل) في الخلفية (بلا كمون). يُستدعى من hooks
+        ما-بعد-الرد: غير-streaming من post_call_success، streaming من iterator. dedup → idempotency.
+        آمن من الحلقة: نداء التضمين الداخلي بلا chat-id → لا التقاط."""
         if not CAPTURE_ENABLED:
             return
-        chat_id = headers.get("x-openwebui-chat-id")
-        if not chat_id:
+        user_id, chat_id, user_text = _request_ctx(data)
+        if not (user_id and chat_id):
             return
-        turns = _recent_turns(messages)
+        turns = []
+        if user_text and not _is_remember(user_text):
+            turns.append({"role": "user", "content": user_text})
+        if assistant_text:
+            turns.append({"role": "assistant", "content": assistant_text})
         if not turns:
             return
         task = asyncio.create_task(self._do_capture(user_id, chat_id, turns, request_id))
@@ -104,6 +112,34 @@ class MemoryHook(CustomLogger):
                 )
         except Exception as e:  # noqa: BLE001 — fail-open: الالتقاط لا يكسر شيئاً
             _log("WARN", "CAPTURE_FAILED", f"capture failed: {type(e).__name__}", request_id)
+
+    async def async_post_call_success_hook(self, data, user_api_key_dict, response):
+        """M4b (غير-streaming): يلتقط الدور بعد الرد. نداءات التضمين تُتخطّى (بلا chat-id/إجابة)."""
+        try:
+            self._fire_capture(data, _content_of(response), (data or {}).get("litellm_call_id"))
+        except Exception as e:  # noqa: BLE001 — fail-open: الالتقاط لا يكسر الرد
+            _log("WARN", "CAPTURE_FAILED", f"post-call capture failed: {type(e).__name__}")
+        return response
+
+    async def async_post_call_streaming_iterator_hook(
+        self, user_api_key_dict, response, request_data
+    ):
+        """M4b (streaming): يمرّر كل chunk **أولاً** (مسار حرج لا يُعطَّل)، يجمع نصّ الإجابة (content،
+        لا reasoning) أثناء التمرير، ثم يلتقط الدور بعد اكتمال التدفّق (بلا كمون على المستخدم)."""
+        parts = []
+        async for chunk in response:
+            try:
+                c = chunk.choices[0].delta.content
+                if c:
+                    parts.append(c)
+            except Exception:  # noqa: BLE001 — التجميع لا يعطّل التمرير أبداً
+                pass
+            yield chunk  # تمرير-أولاً صارم: الردّ يصل المستخدم كاملاً غير معدَّل
+        try:
+            rid = (request_data or {}).get("litellm_call_id")
+            self._fire_capture(request_data, "".join(parts).strip(), rid)
+        except Exception as e:  # noqa: BLE001 — fail-open بعد اكتمال الرد
+            _log("WARN", "CAPTURE_FAILED", f"stream capture failed: {type(e).__name__}")
 
     async def _maybe_write(self, user_id, text, headers_out, request_id):
         """WRITE (HITL صريح): يخزّن ما بعد بادئة 'تذكّر:'/'remember:' فقط (المستخدم يقرّر)."""
@@ -173,7 +209,6 @@ class MemoryHook(CustomLogger):
             text = _text_of(last_user).strip()
             if not text:
                 return data
-            self._fire_capture(user_id, headers, messages, request_id)  # M4b (خلفي)
             await self._maybe_write(user_id, text, headers_out, request_id)
             await self._assemble_and_inject(user_id, text, messages, data, headers_out, request_id)
         except httpx.HTTPError as e:
