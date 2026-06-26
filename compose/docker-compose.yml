@@ -125,7 +125,7 @@ services:
       timeout: 5s
       retries: 5
 
-  memory:                                    # خدمة الذاكرة per-user (L1) — ADR-012 (يعدّل قائمة R-ARCH-31)
+  memory:                                    # خدمة الذاكرة per-user (Context Engine L2) — ADR-019/023
     build: ../services/memory
     restart: unless-stopped
     depends_on:

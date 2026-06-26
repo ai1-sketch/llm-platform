@@ -71,7 +71,7 @@ Context Builder (خط أنابيب حتمي v1):
 ## 4. القرارات المقفلة
 1. **3 جداول لكل-مصدر** (نطوّر `memory.user_memory` مكانه؛ conversation + file جداول خاصة). `Normalize` = مُحوِّل `normalize(native_row)->MemoryItem`؛ المراحل التالية لا ترى شكل المخزن.
 2. **عقد واحد = `MemoryItem`** (Pydantic). يحمل `embedding_ref` (وصف) **لا متجهات خام**؛ متجهات الـ dedup عبر **قناة جانبية** `dict[item_id→vector]` من Retrieve؛ `provenance` كائن مُهيكَل (Rank يقرأ `provenance.origin`).
-3. **مفردات موحّدة:** مفتاح العزل `user_id` · PK `bigserial` + `item_id uuidv7` · `status` enum `{active|archived|superseded|deleted}` · `content`↔`text` يُوحَّد مرّة في Normalize.
+3. **مفردات موحّدة:** مفتاح العزل `user_id` · PK `bigserial` + `item_id` (`gen_random_uuid` UUIDv4؛ uuidv7 مؤجَّل، [ADR-024](../DECISIONS.md)) · `status` enum `{active|archived|superseded|deleted}` · `content`↔`text` يُوحَّد مرّة في Normalize.
 4. **تبديل صورة pgvector = خطوة صفر** (ADR-020 يعدّل P-01؛ digest جديد + checkpoint قبل/بعد).
 5. **تثبيت بُعد التضمين** بقياس الموديل **قبل أي `ALTER TABLE`**؛ البُعد **مُصدَّر بالإصدار** (تغييره = عمود v2 + backfill).
 6. **النافذة من الإعداد (صحّحه [ADR-021](../DECISIONS.md)):** الميزانية = `min(CTX_INJECTION_BUDGET, CTX_MODEL_WINDOW − CTX_RESERVED_TOKENS)` (config-driven، بلا قراءة `model_info`، **fail-open** لا fail-fast)؛ **عدّ توكنات = بايتات UTF-8** (محافظ مُثبَت `≥` عدّ الموديل، باختبار خاصية على عيّنات أرقام/IBAN مقيسة) لا tokenizer دقيق؛ تأكيد صارم `injected ≤ budget` نقطة واحدة في Compose (bytes ≥ real ⇒ real ≤ budget). (tokenizer دقيق + قراءة model_info + fail-fast = مؤجَّلة v2.)
@@ -85,7 +85,7 @@ Context Builder (خط أنابيب حتمي v1):
 | الحقل | النوع | من يضبطه |
 |---|---|---|
 | `id` | bigserial (DB PK) | DB |
-| `item_id` | UUIDv7 | الكتابة (مرتّب زمنياً) |
+| `item_id` | UUIDv4 (`gen_random_uuid`؛ v7 مؤجَّل ADR-024) | الكتابة (معرّف ثابت؛ الترتيب الزمني من `created_at`) |
 | `source_type` | enum `user_fact\|conversation_chunk\|document_chunk\|reflection*` | الكتابة (*محجوز v1) |
 | `scope` | `{user_id*, conversation_id?, file_id?, chunk_no?}` | الكتابة (`user_id` إلزامي = مفتاح العزل) |
 | `text` | text | Normalize |

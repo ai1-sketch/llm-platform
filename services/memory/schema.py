@@ -84,6 +84,7 @@ def build_schema_ddl() -> str:
         "CREATE SCHEMA IF NOT EXISTS memory;",
         "CREATE EXTENSION IF NOT EXISTS vector;",
         "CREATE EXTENSION IF NOT EXISTS pg_trgm;",
+        "CREATE EXTENSION IF NOT EXISTS unaccent;",  # بحث نصّي مُهيَّأ (ADR-020)
         _alter_user_memory(),
         _create_table("conversation_memory", "conversation_chunk"),
         _create_table("file_memory", "document_chunk"),
