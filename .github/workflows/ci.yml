@@ -9,20 +9,35 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    services:
+      # Postgres+pgvector حقيقي لبوّابة اختبار العزل per-user (المواصفة §13). digest مثبّت = يطابق compose.
+      postgres:
+        image: pgvector/pgvector@sha256:131dcf7ff6a900545df8e7e092c270aa8c6db2f2c818e408cb45ec21316b74e6
+        env:
+          POSTGRES_USER: litellm
+          POSTGRES_PASSWORD: litellm
+          POSTGRES_DB: litellm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U litellm -d litellm"
+          --health-interval 10s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install pinned tools (asyncpg/litellm مُكفّآن في conftest)
-        run: pip install ruff==0.12.0 mypy==2.1.0 pytest fastapi httpx
+      - name: Install pinned tools (litellm مُكفّأ في conftest؛ asyncpg حقيقي لاختبارات التكامل)
+        run: pip install ruff==0.12.0 mypy==2.1.0 pytest fastapi httpx asyncpg
       - name: Ruff lint
         run: ruff check .
       - name: Ruff format check
         run: ruff format --check .
       - name: Mypy (our code)
         run: MYPYPATH=services/memory mypy --config-file pyproject.toml services/memory/app.py services/memory/models.py services/memory/schema.py services/memory/normalize.py services/memory/arabic.py services/memory/embeddings.py services/memory/retrieve.py services/memory/rank.py services/memory/compose.py config/litellm/memory_hook.py
-      - name: Pytest
+      - name: Pytest (unit + real-Postgres integration — عزل per-user يُنفَّذ فعلاً)
+        env:
+          MEMORY_TEST_DATABASE_URL: postgresql://litellm:litellm@localhost:5432/litellm
         run: pytest -q
 
   secrets:

@@ -29,17 +29,19 @@ sys.modules.setdefault("litellm", _litellm)
 sys.modules.setdefault("litellm.integrations", _integrations)
 sys.modules.setdefault("litellm.integrations.custom_logger", _custom)
 
-# stub asyncpg: لا اتصال فعلي؛ الاختبارات تحقن mock pool
-_asyncpg = types.ModuleType("asyncpg")
-_asyncpg.Pool = object
+# نُكفّئ asyncpg **فقط إن لم يكن مُثبَّتاً** (اختبارات الوحدة بلا DB تحقن mock pool).
+# إن توفّر asyncpg الحقيقي (بيئة التكامل/CI) نستخدمه كما هو ليعمل اختبار العزل على Postgres حقيقي.
+try:
+    import asyncpg  # noqa: F401
+except ImportError:
+    _asyncpg = types.ModuleType("asyncpg")
+    _asyncpg.Pool = object
 
+    async def _create_pool(*a, **k):
+        return MagicMock()
 
-async def _create_pool(*a, **k):
-    return MagicMock()
-
-
-_asyncpg.create_pool = _create_pool
-sys.modules.setdefault("asyncpg", _asyncpg)
+    _asyncpg.create_pool = _create_pool
+    sys.modules["asyncpg"] = _asyncpg
 
 # app.py يفشل-بسرعة إن غاب MEMORY_DATABASE_URL → نضبطه قبل الاستيراد
 os.environ.setdefault("MEMORY_DATABASE_URL", "postgresql://test:test@localhost/test")
