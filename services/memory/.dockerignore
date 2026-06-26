@@ -1,0 +1,9 @@
+# لا تُرسَل كاش/أدوات إلى سياق البناء أو طبقات الصورة (R-ARCH، نظافة + إعادة إنتاج)
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+Dockerfile
+.dockerignore
