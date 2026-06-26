@@ -19,8 +19,11 @@ from arabic import normalize_ar
 from embeddings import EMBEDDING_MODEL_VERSION, embed_one, to_pgvector
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from rank import rank_items
 from retrieve import retrieve
 from schema import SCHEMA_DDL
+
+from compose import compose_context
 
 
 def _log(level, code, message, request_id=None, **extra):
@@ -97,6 +100,14 @@ class RetrieveReq(BaseModel):
     user_id: str = Field(min_length=1)
     query: str = Field(min_length=1)
     top_k: int = 8
+
+
+class AssembleReq(BaseModel):
+    user_id: str = Field(min_length=1)
+    query: str = Field(min_length=1)
+    budget_tokens: int = (
+        1500  # يحسبه الـ hook من نافذة الموديل الحالية في M4 (فصل الحجم عن النافذة)
+    )
 
 
 def _require_pool() -> "asyncpg.Pool":
@@ -185,4 +196,18 @@ async def retrieve_endpoint(req: RetrieveReq):
             }
             for m, score in results
         ]
+    }
+
+
+@app.post("/v1/assemble")
+async def assemble_endpoint(req: AssembleReq):
+    """مسار القراءة الكامل: retrieve → rank → compose. يُرجِع كتلة سياق ضمن الميزانية (M3)."""
+    candidates = await retrieve(_require_pool(), req.user_id, req.query, top_k=12)
+    ranked = rank_items(candidates)
+    result = compose_context(ranked, req.budget_tokens)
+    return {
+        "context_block": result.block,
+        "item_count": len(result.items),
+        "tokens": result.tokens,
+        "budget_tokens": req.budget_tokens,
     }
