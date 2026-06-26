@@ -133,7 +133,7 @@ async def list_memories(user_id: str = Query(min_length=1), limit: int = 50):
 
 
 @app.post("/v1/memories")
-async def add_memory(req: AddReq):
+async def add_memory(req: AddReq, request: Request):
     content = req.content.strip()
     if not content:
         raise HTTPException(status_code=400, detail="content فارغ بعد التشذيب")
@@ -142,11 +142,12 @@ async def add_memory(req: AddReq):
     token_estimate = max(
         1, len(content) // 4
     )  # تقدير كتابة-وقت تقريبي؛ ميزانية القراءة الفعلية = byte-count في Compose (ADR-021)
+    rid = request.headers.get("x-request-id")  # سلسلة معرّف الطلب للبوّابة (R-ERR-19)
     # التضمين fail-soft: عطل خدمة التضمين لا يُفقد الحقيقة (تُخزَّن بلا متجه وتُسترجَع لفظياً)
     vec_literal: str | None = None
     model_version: str | None = None
     try:
-        vec_literal = to_pgvector(await embed_one(norm))
+        vec_literal = to_pgvector(await embed_one(norm, request_id=rid))
         model_version = EMBEDDING_MODEL_VERSION
     except Exception as e:  # noqa: BLE001 — fail-soft مقصود؛ نسجّله ولا نكسر الكتابة
         _log("WARN", "EMBED_FAILED", f"stored without vector: {type(e).__name__}")
@@ -182,9 +183,12 @@ async def clear_all(user_id: str = Query(min_length=1)):
 
 
 @app.post("/v1/retrieve")
-async def retrieve_endpoint(req: RetrieveReq):
+async def retrieve_endpoint(req: RetrieveReq, request: Request):
     """استرجاع هجين (dense+lexical+RRF) — مرشّحون مُرتّبون. يستهلكه الـ Orchestrator لاحقاً (M4)."""
-    results = await retrieve(_require_pool(), req.user_id, req.query, top_k=req.top_k)
+    rid = request.headers.get("x-request-id")
+    results = await retrieve(
+        _require_pool(), req.user_id, req.query, top_k=req.top_k, request_id=rid
+    )
     return {
         "results": [
             {
@@ -199,9 +203,10 @@ async def retrieve_endpoint(req: RetrieveReq):
 
 
 @app.post("/v1/assemble")
-async def assemble_endpoint(req: AssembleReq):
+async def assemble_endpoint(req: AssembleReq, request: Request):
     """مسار القراءة الكامل: retrieve → rank → compose. يُرجِع كتلة سياق ضمن الميزانية (M3)."""
-    candidates = await retrieve(_require_pool(), req.user_id, req.query, top_k=12)
+    rid = request.headers.get("x-request-id")
+    candidates = await retrieve(_require_pool(), req.user_id, req.query, top_k=12, request_id=rid)
     ranked = rank_items(candidates)
     result = compose_context(ranked, req.budget_tokens)
     return {

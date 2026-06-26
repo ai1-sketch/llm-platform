@@ -11,12 +11,13 @@ import asyncio
 from typing import Any
 
 from arabic import normalize_ar
-from embeddings import embed_one, to_pgvector
+from embeddings import embed_query, to_pgvector
 from models import MemoryItem
 from normalize import row_to_memory_item
 
 DEFAULT_TABLES = ("user_memory", "conversation_memory", "file_memory")
 RRF_K = 60  # ثابت RRF القياسي
+PER_STORE_K = 10  # عدد المرشّحين لكل مخزن قبل الدمج (ثابت؛ كان وسيطاً غير مُستخدَم خارجياً)
 
 # الأعمدة التي يحتاجها Normalize (نتجنّب جلب المتجه الخام وcontent_tsv — حِمل كبير بلا داعٍ)
 _COLS = (
@@ -67,21 +68,22 @@ async def retrieve(
     user_id: str,
     query: str,
     top_k: int = 8,
-    per_store_k: int = 10,
     tables: tuple[str, ...] = DEFAULT_TABLES,
+    request_id: str | None = None,
 ) -> list[tuple[MemoryItem, float]]:
     """استرجاع هجين عبر المخازن المعطاة (كلها محصورة بـ user_id) → مرشّحون مدموجون بـ RRF."""
     norm_query = normalize_ar(query)
     qvec_literal: str | None = None
     try:
-        qvec_literal = to_pgvector(await embed_one(norm_query))
+        # تضمين الاستعلام بتعليمة Qwen3 (لا-تماثلي)؛ request_id يُمرَّر للبوّابة (R-ERR-19)
+        qvec_literal = to_pgvector(await embed_query(norm_query, request_id=request_id))
     except Exception:  # noqa: BLE001 — fail-soft: بلا تضمين نكتفي بالبحث اللفظي
         qvec_literal = None
 
     tasks = []
     for t in tables:
         if qvec_literal:
-            tasks.append(_dense(pool, t, user_id, qvec_literal, per_store_k))
-        tasks.append(_lexical(pool, t, user_id, norm_query, per_store_k))
+            tasks.append(_dense(pool, t, user_id, qvec_literal, PER_STORE_K))
+        tasks.append(_lexical(pool, t, user_id, norm_query, PER_STORE_K))
     ranked_lists = await asyncio.gather(*tasks)
     return _rrf_merge(ranked_lists, top_k)

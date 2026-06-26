@@ -58,10 +58,10 @@ async def _cleanup(pool, *user_ids):
 
 
 def _no_embeddings(monkeypatch):
-    async def _boom(_t):
+    async def _boom(_t, request_id=None):
         raise RuntimeError("no embeddings service in integration test")
 
-    monkeypatch.setattr(R, "embed_one", _boom)  # fail-soft → مسار لفظي فقط
+    monkeypatch.setattr(R, "embed_query", _boom)  # fail-soft → مسار لفظي فقط
 
 
 def test_schema_ddl_creates_three_stores():

@@ -35,7 +35,7 @@ def test_list_scoped_by_user(client):
 def test_add_memory(client, monkeypatch):
     c, pool = client
 
-    async def _fake_embed(_text):  # نتجنّب الشبكة + نختبر مسار "embedded"
+    async def _fake_embed(_text, request_id=None):  # نتجنّب الشبكة + نختبر مسار "embedded"
         return [0.1] * 1024
 
     monkeypatch.setattr(appmod, "embed_one", _fake_embed)
@@ -50,7 +50,7 @@ def test_add_memory(client, monkeypatch):
 def test_add_memory_embed_fail_soft(client, monkeypatch):
     c, _ = client
 
-    async def _boom(_text):
+    async def _boom(_text, request_id=None):
         raise RuntimeError("embeddings down")
 
     monkeypatch.setattr(appmod, "embed_one", _boom)
