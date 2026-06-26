@@ -135,6 +135,36 @@ def test_hook_fail_open(monkeypatch, capsys):
 
 
 # ── رصد per-request ──
+def test_hook_budget_is_window_aware(monkeypatch):
+    rec = _install_fake_httpx(monkeypatch, assemble_block="ctx")
+    data = {
+        "litellm_call_id": "rid-w",
+        "proxy_server_request": {"headers": {"x-openwebui-user-id": "u1"}},
+        "messages": [{"role": "user", "content": "ما لوني؟"}],
+    }
+    _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
+    assemble = next(c for c in rec["calls"] if "/v1/assemble" in c[1])
+    expected = min(mh.INJECTION_BUDGET, mh.MODEL_WINDOW - mh.RESERVED_TOKENS)
+    assert assemble[2]["budget_tokens"] == expected
+    # الثابت الأمني: المحقون + المحجوز لا يتجاوزان النافذة أبداً (ADR-021)
+    assert assemble[2]["budget_tokens"] + mh.RESERVED_TOKENS <= mh.MODEL_WINDOW
+
+
+def test_hook_skips_injection_when_budget_nonpositive(monkeypatch, capsys):
+    monkeypatch.setattr(mh, "MODEL_WINDOW", 1000)
+    monkeypatch.setattr(mh, "RESERVED_TOKENS", 1200)  # المحجوز > النافذة → budget ≤ 0
+    rec = _install_fake_httpx(monkeypatch, assemble_block="ctx")
+    data = {
+        "litellm_call_id": "rid-z",
+        "proxy_server_request": {"headers": {"x-openwebui-user-id": "u1"}},
+        "messages": [{"role": "user", "content": "ما لوني؟"}],
+    }
+    out = _run(mh.MemoryHook().async_pre_call_hook(None, None, data, "completion"))
+    assert not any("/v1/assemble" in c[1] for c in rec["calls"])  # لا محاولة حقن
+    assert "INJECTION_BUDGET_NONPOSITIVE" in capsys.readouterr().out  # صاخب
+    assert out["messages"][0]["content"] == "ما لوني؟"  # المحادثة لم تنكسر
+
+
 def test_success_event_cost_log(capsys):
     kwargs = {
         "standard_logging_object": {

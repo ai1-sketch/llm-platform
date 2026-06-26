@@ -105,9 +105,8 @@ class RetrieveReq(BaseModel):
 class AssembleReq(BaseModel):
     user_id: str = Field(min_length=1)
     query: str = Field(min_length=1)
-    budget_tokens: int = (
-        1500  # يحسبه الـ hook من نافذة الموديل الحالية في M4 (فصل الحجم عن النافذة)
-    )
+    # الـ hook يمرّر دائماً ميزانية واعية بالنافذة (ADR-021)؛ هذا الافتراضي fallback للنداء المباشر
+    budget_tokens: int = 1500
 
 
 def _require_pool() -> "asyncpg.Pool":
@@ -142,7 +141,7 @@ async def add_memory(req: AddReq):
     content_hash = hashlib.sha256(norm.encode("utf-8")).hexdigest()
     token_estimate = max(
         1, len(content) // 4
-    )  # تقدير كتابة-وقت (heuristic؛ tokenizer دقيق في Compose)
+    )  # تقدير كتابة-وقت تقريبي؛ ميزانية القراءة الفعلية = byte-count في Compose (ADR-021)
     # التضمين fail-soft: عطل خدمة التضمين لا يُفقد الحقيقة (تُخزَّن بلا متجه وتُسترجَع لفظياً)
     vec_literal: str | None = None
     model_version: str | None = None

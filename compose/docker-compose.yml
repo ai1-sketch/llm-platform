@@ -64,6 +64,9 @@ services:
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}@postgres:5432/litellm
       LLAMACPP_API_KEY: ${LLAMACPP_API_KEY:?LLAMACPP_API_KEY مفقود}   # يطابق --api-key للمحرّك
       LITELLM_LOG: ${LITELLM_LOG:-INFO}                              # مستوى السجل (R-ERR-17)
+      CTX_MODEL_WINDOW: ${CTX_MODEL_WINDOW:-4096}                    # ميزانية حقن الذاكرة واعية بالنافذة (ADR-021)
+      CTX_RESERVED_TOKENS: ${CTX_RESERVED_TOKENS:-2560}             # محجوز للجواب + الرسائل الحيّة
+      CTX_INJECTION_BUDGET: ${CTX_INJECTION_BUDGET:-1000}          # سقف الحقن المرغوب (يُقصّ بـ window-reserved)
     volumes:
       - ../config/litellm/litellm-config.yaml:/app/config.yaml:ro
       - ../config/litellm/memory_hook.py:/app/custom_hook.py:ro   # hook الذاكرة per-user (ADR-012)

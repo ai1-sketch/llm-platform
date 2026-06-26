@@ -49,3 +49,33 @@ def test_never_exceeds_budget():
 def test_empty_when_budget_below_header():
     r = C.compose_context([(_item("anything"), 0.9)], budget_tokens=1)
     assert r.items == [] and r.block == "" and r.tokens == 0
+
+
+# عدد التوكنات الحقيقي مقيس حيّاً من Gemma عبر llama-server /tokenize (2026-06-26) — ADR-021.
+# يشمل **عمداً** الأرقام/IBAN/التشكيل (الحالات التي كان ceil(len/2.5) يُقلّل عدّها → غير آمن).
+# byte-count حدّ أعلى مُثبَت ⇒ count_tokens(text) ≥ real دائماً (شرط عدم تجاوز النافذة).
+def test_count_tokens_upper_bounds_real_gemma_tokens():
+    golden = [
+        ("المستخدم مهندس برمجيات يعمل في شركة تقنية ويهتم بالذكاء الاصطناعي", 22),
+        ("مشروعي الجديد اسمه نبتة-إتش-ون", 13),
+        ("رقم الآيبان SA0380000000608010167519", 28),  # كان التقدير بالحروف 15 < 28
+        ("تذكّر: رقم هاتفي 0501234567 وتاريخ ميلادي 1990-01-15", 33),
+        ("الطلب رقم 1234567890 بتاريخ 2026-06-26 بقيمة 99.99 دولار", 35),
+        ("مُحَمَّدٌ رَسُولُ اللَّهِ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ", 30),
+        ("The user is a software engineer who likes turquoise", 9),
+        ("استرجاعالمعلوماتالدلاليمعالتطبيعالعربي", 15),
+        ("نعم", 2),
+    ]
+    for text, real_tokens in golden:
+        assert C.count_tokens(text) >= real_tokens, f"under-count: {text!r}"
+
+
+def test_never_exceeds_budget_dense_numeric_arabic():
+    # محتوى رقمي عربي كثيف (الذي كان يكسر التقدير بالحروف). byte-count ≥ real ⇒ block ضمن الميزانية
+    # بالبايت يعني الكتلة ضمن الميزانية بالتوكنات الحقيقية أيضاً (لا تجاوز نافذة فعلي).
+    facts = [f"رقم الآيبان SA038000000060801016751{i:02d}" for i in range(20)]
+    items = [(_item(f), 0.9 - i * 0.01) for i, f in enumerate(facts)]
+    r = C.compose_context(items, budget_tokens=500)
+    assert r.block  # عناصر فعلاً مُختارة (الاختبار غير فارغ)
+    assert r.tokens <= 500
+    assert C.count_tokens(r.block) <= 500

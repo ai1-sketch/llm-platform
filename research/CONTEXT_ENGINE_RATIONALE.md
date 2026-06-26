@@ -51,7 +51,7 @@
 3. مفردات موحّدة: `user_id` مفتاح العزل · `bigserial` PK + `item_id` · enum حالة موحّد · `content↔text` يُوحَّد في Normalize.
 4. **pgvector = خطوة صفر** (ADR-020)؛ bootstrap يفشل بصوت لا stack-trace.
 5. **تثبيت البُعد** قبل أي ALTER؛ مُصدَّر بالإصدار (تغييره = عمود v2 + backfill).
-6. **النافذة 4096:** إلزام `model_info.max_input_tokens` + tokenizer حقيقي + تأكيد `injected+reserved ≤ window` (نُسقِط الأدنى ترتيباً، لا نعتمد على قصّ المحرّك).
+6. **النافذة 4096:** إلزام `model_info.max_input_tokens` + tokenizer حقيقي + تأكيد `injected+reserved ≤ window` (نُسقِط الأدنى ترتيباً، لا نعتمد على قصّ المحرّك). — **صحّحه ADR-021** (تدقيق 2026-06-26): نافذة من الإعداد + عدّ توكنات = بايتات UTF-8 (محافظ مُثبَت) + fail-open؛ هذا القرار الأصلي (model_info + tokenizer حقيقي + fail-fast) مؤجَّل v2.
 7. **الأمان v1:** `WHERE user_id` + بوّابة داخلية + provenance + حذف-للنسيان + اختبار عزل على Postgres حقيقي. RLS الكامل + virtual keys per-user + تجريد header = **v2 إلزامية قبل أي فتح خارجي**.
 8. **التلخيص مؤجَّل v2**؛ v1 محادثة = التقاط حرفي + استرجاع دلالي.
 9. **seam كتابة واحد** = `ingest` موحّد؛ inline-async (بلا طابور/worker v1)؛ `POST /v1/memories` يبقى shim.

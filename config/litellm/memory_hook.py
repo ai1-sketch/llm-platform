@@ -19,9 +19,11 @@ from litellm.integrations.custom_logger import CustomLogger
 MEM_URL = "http://memory:8088"
 REMEMBER_PREFIXES = ("تذكّر:", "تذكر:", "remember:", "/remember ")
 SERVICE = "litellm"  # هذا الكود يعمل داخل عملية البوّابة → service يطابق اسم خدمة Docker (R-ARCH-34)
-INJECTION_BUDGET = int(
-    os.environ.get("CTX_INJECTION_BUDGET", "1000")
-)  # ميزانية حقن الذاكرة (توكنات، config-driven)
+# ميزانية حقن واعية بالنافذة (ADR-021): config-driven، fail-open.
+# الفعلية = min(INJECTION_BUDGET, MODEL_WINDOW - RESERVED_TOKENS) ⇒ injected+reserved ≤ window.
+INJECTION_BUDGET = int(os.environ.get("CTX_INJECTION_BUDGET", "1000"))  # سقف الحقن المرغوب
+MODEL_WINDOW = int(os.environ.get("CTX_MODEL_WINDOW", "4096"))  # نافذة الموديل (حدّثها عند تبديله)
+RESERVED_TOKENS = int(os.environ.get("CTX_RESERVED_TOKENS", "2560"))  # محجوز للجواب + الرسائل الحيّة
 
 
 def _log(level, code, message, request_id=None, **extra):
@@ -47,6 +49,46 @@ def _text_of(msg):
 
 
 class MemoryHook(CustomLogger):
+    async def _maybe_write(self, user_id, text, headers_out):
+        """WRITE (HITL صريح): يخزّن ما بعد بادئة 'تذكّر:'/'remember:' فقط (المستخدم يقرّر)."""
+        for p in REMEMBER_PREFIXES:
+            if text.lower().startswith(p.lower()):
+                fact = text[len(p) :].strip()
+                if fact:
+                    async with httpx.AsyncClient(timeout=5) as c:
+                        await c.post(
+                            f"{MEM_URL}/v1/memories",
+                            json={"user_id": user_id, "content": fact},
+                            headers=headers_out,
+                        )
+                return
+
+    async def _assemble_and_inject(self, user_id, text, messages, data, headers_out, request_id):
+        """READ: ميزانية واعية بالنافذة (ADR-021) → حقن كتلة السياق في رسالة system."""
+        budget = min(INJECTION_BUDGET, MODEL_WINDOW - RESERVED_TOKENS)
+        if budget <= 0:  # النافذة مستهلَكة بالكامل بالمحجوز → لا حقن (fail-open، لكن صاخب)
+            _log(
+                "WARN",
+                "INJECTION_BUDGET_NONPOSITIVE",
+                f"window={MODEL_WINDOW} reserved={RESERVED_TOKENS} -> skip injection",
+                request_id,
+            )
+            return
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post(
+                f"{MEM_URL}/v1/assemble",
+                json={"user_id": user_id, "query": text, "budget_tokens": budget},
+                headers=headers_out,
+            )
+        block = r.json().get("context_block", "") if r.status_code == 200 else ""
+        if not block:
+            return
+        if messages[0].get("role") == "system":
+            messages[0]["content"] = _text_of(messages[0]) + "\n\n" + block
+        else:
+            messages.insert(0, {"role": "system", "content": block})
+        data["messages"] = messages
+
     async def async_pre_call_hook(self, user_api_key_dict, cache, data, call_type):
         request_id = data.get("litellm_call_id")  # مُضبَط في البوّابة قبل هذا الـ hook
         headers_out = {"X-Request-ID": request_id} if request_id else {}
@@ -56,38 +98,12 @@ class MemoryHook(CustomLogger):
             messages = data.get("messages") or []
             if not user_id or not messages:
                 return data
-
             last_user = next((m for m in reversed(messages) if m.get("role") == "user"), None)
             text = _text_of(last_user).strip()
-
-            # WRITE (HITL صريح)
-            for p in REMEMBER_PREFIXES:
-                if text.lower().startswith(p.lower()):
-                    fact = text[len(p) :].strip()
-                    if fact:
-                        async with httpx.AsyncClient(timeout=5) as c:
-                            await c.post(
-                                f"{MEM_URL}/v1/memories",
-                                json={"user_id": user_id, "content": fact},
-                                headers=headers_out,
-                            )
-                    break
-
-            # READ عبر /v1/assemble: استرجاع دلالي + ترتيب + ميزانية (M3/M4) → كتلة مُسيَّجة جاهزة
-            if text:
-                async with httpx.AsyncClient(timeout=10) as c:
-                    r = await c.post(
-                        f"{MEM_URL}/v1/assemble",
-                        json={"user_id": user_id, "query": text, "budget_tokens": INJECTION_BUDGET},
-                        headers=headers_out,
-                    )
-                block = r.json().get("context_block", "") if r.status_code == 200 else ""
-                if block:
-                    if messages and messages[0].get("role") == "system":
-                        messages[0]["content"] = _text_of(messages[0]) + "\n\n" + block
-                    else:
-                        messages.insert(0, {"role": "system", "content": block})
-                    data["messages"] = messages
+            if not text:
+                return data
+            await self._maybe_write(user_id, text, headers_out)
+            await self._assemble_and_inject(user_id, text, messages, data, headers_out, request_id)
         except httpx.HTTPError as e:
             # فشل متوقّع في الاتصال بخدمة الذاكرة → fail-open لكن صاخب ومهيكل
             _log(

@@ -33,7 +33,7 @@
 
 **الهدف:** طبقة "Context Engine" خلف بوّابة LiteLLM (نقطة دخول وحيدة = Memory Orchestrator) تبني **أفضل سياق ممكن** لكل طلب من ذاكرات متعدّدة، بحيث **حجم الذاكرة المخزَّنة مستقل عن نافذة الموديل**.
 
-**v1 يشمل:** ذاكرة مستخدم دلالية · التقاط محادثة حرفي + استرجاع · استرجاع ملفات أساسي · tokenizer حقيقي · فحص ميزانية صارم · عقد `MemoryItem` موحّد · خط الأنابيب الكامل (Retrieve/Normalize/Rank/Compose) · Orchestrator + ingest موحّد.
+**v1 يشمل:** ذاكرة مستخدم دلالية · التقاط محادثة حرفي + استرجاع · استرجاع ملفات أساسي · عدّ توكنات محافظ (بايتات، [ADR-021](../DECISIONS.md)) · فحص ميزانية صارم · عقد `MemoryItem` موحّد · خط الأنابيب الكامل (Retrieve/Normalize/Rank/Compose) · Orchestrator + ingest موحّد.
 
 **v1 لا يشمل (مؤجَّل v2):** التلخيص بـ LLM · سياسة High/Low-Water · RLS الكامل + virtual keys per-user · parent/child file chunks · Reflection memory · LLM router · طابور كتابة دائم.
 
@@ -74,7 +74,7 @@ Context Builder (خط أنابيب حتمي v1):
 3. **مفردات موحّدة:** مفتاح العزل `user_id` · PK `bigserial` + `item_id uuidv7` · `status` enum `{active|archived|superseded|deleted}` · `content`↔`text` يُوحَّد مرّة في Normalize.
 4. **تبديل صورة pgvector = خطوة صفر** (ADR-020 يعدّل P-01؛ digest جديد + checkpoint قبل/بعد).
 5. **تثبيت بُعد التضمين** بقياس الموديل **قبل أي `ALTER TABLE`**؛ البُعد **مُصدَّر بالإصدار** (تغييره = عمود v2 + backfill).
-6. **النافذة الحقيقية 4096:** نُلزم `model_info.max_input_tokens` (نقرأه أولاً، fail-fast عند غيابه)؛ **tokenizer حقيقي** على مسار القراءة؛ تأكيد صارم `injected + reserved ≤ window` (وإلا نُسقِط الأدنى ترتيباً — لا نعتمد على قصّ المحرّك).
+6. **النافذة من الإعداد (صحّحه [ADR-021](../DECISIONS.md)):** الميزانية = `min(CTX_INJECTION_BUDGET, CTX_MODEL_WINDOW − CTX_RESERVED_TOKENS)` (config-driven، بلا قراءة `model_info`، **fail-open** لا fail-fast)؛ **عدّ توكنات = بايتات UTF-8** (محافظ مُثبَت `≥` عدّ الموديل، باختبار خاصية على عيّنات أرقام/IBAN مقيسة) لا tokenizer دقيق؛ تأكيد صارم `injected ≤ budget` نقطة واحدة في Compose (bytes ≥ real ⇒ real ≤ budget). (tokenizer دقيق + قراءة model_info + fail-fast = مؤجَّلة v2.)
 7. **`normalize_ar` واحدة** مُصدَّرة بالإصدار (فهرسة = استعلام، بايت-بايت)؛ تملكها وحدة التضمين، يستوردها Retrieve والكتابة.
 8. **seam كتابة واحد** = `ingest` موحّد؛ كتابة inline-async (بلا طابور/worker في v1)؛ `POST /v1/memories` يبقى shim لحقائق المستخدم (لا تنكسر الـ17 اختباراً).
 
@@ -106,7 +106,7 @@ Context Builder (خط أنابيب حتمي v1):
 - **Retrieve:** بوّابات رخيصة حتمية (هل للمستخدم ملفات؟ محادثة طويلة؟ ملف رُفع؟) → استعلام المخازن المرشّحة **بالتوازي**؛ لكل مخزن **هجين**: dense (pgvector/HNSW على halfvec) + lexical (tsvector) مدموجان بـ **RRF (k=60)**؛ تطبيق `relevance_threshold` و `retrieval_top_k`. يُصدِر `relevance_raw` موحّد + قناة المتجهات الجانبية. بلا LLM.
 - **Normalize:** `normalize(native_row)->MemoryItem` لكل مخزن؛ توحيد `content↔text` و`status` والـ provenance هنا. بعد هذه المرحلة لا أحد يعرف مصدر الصفّ.
 - **Rank:** `Score = w_rel·Rel + w_rec·Rec + w_imp·Imp + w_conf·Conf`؛ `Rel` min-max **لكل طلب** عبر المجموعة المدموجة؛ `Rec` تحلّل بنصف-عمر؛ `Imp/Conf` من الأعمدة (لا LLM). أوزان **لكل نوع** (ملفات: Rel غالب؛ محادثة: +Rec؛ حقائق: currency).
-- **Compose (+ Budget Manager):** اكتشاف النافذة (`max_input_tokens`) → `budget = window − model_reserved_tokens − live_messages` → تخصيص بحصص قابلة للضبط ثم ملء بالترتيب → **dedup** بالتشابه (≥0.88 عبر القناة الجانبية، أو `content_hash`) → اختيار تمثيل (كامل/مقاطع) بالحجم → ترتيب U-shaped (تخفيف lost-in-the-middle) → كتلة محصورة (سياج "بيانات لا تعليمات" ضد الحقن) → **تأكيد `injected+reserved ≤ window`**.
+- **Compose (+ Budget Manager):** النافذة من الإعداد (`CTX_MODEL_WINDOW`، [ADR-021](../DECISIONS.md)) → `budget = min(CTX_INJECTION_BUDGET, window − CTX_RESERVED_TOKENS)` → تخصيص بحصص قابلة للضبط ثم ملء بالترتيب → **dedup** بالتشابه (≥0.88 عبر القناة الجانبية، أو `content_hash`) → اختيار تمثيل (كامل/مقاطع) بالحجم → ترتيب U-shaped (تخفيف lost-in-the-middle) → كتلة محصورة (سياج "بيانات لا تعليمات" ضد الحقن) → **تأكيد `injected+reserved ≤ window`**.
 
 <a id="7-الorchestrator"></a>
 ## 7. الـ Orchestrator: الواجهة ومسار الكتابة
@@ -145,7 +145,7 @@ Context Builder (خط أنابيب حتمي v1):
 - **M0 — المتطلّبات المسبقة:** P-req-1/2/3 أعلاه. **DoD:** الـ stack يُقلع بصورة pgvector، الامتداد مُفعّل، البُعد مُثبَّت، conversation_id مؤكَّد. checkpoint.
 - **M1 — البيانات + العقد:** هجرة `user_memory` مكانه (أعمدة المغلّف + halfvec) + جدولا conversation/file + فهارس (HNSW/GIN/tsvector) + `MemoryItem` Pydantic + مُحوّلات Normalize. **DoD:** bootstrap idempotent، round-trip للعنصر، اختبارات.
 - **M2 — التضمين + Retrieve:** التضمين عند الكتابة + استرجاع هجين لكل مخزن + `normalize_ar` مشتركة + البوّابات الرخيصة. **DoD:** استرجاع مُرتّب لكل مخزن، تماثل عربي، اختبارات.
-- **M3 — Rank + Compose + Budget:** محرّك الدرجات + tokenizer حقيقي + اكتشاف النافذة (fail-fast) + تخصيص + dedup + ترتيب + **تأكيد عدم تجاوز النافذة** (ثابت CI). **DoD:** الميزانية لا تُتجاوز أبداً، حتمي، اختبارات.
+- **M3 — Rank + Compose + Budget:** محرّك الدرجات + عدّ توكنات محافظ (بايتات، [ADR-021](../DECISIONS.md)) + نافذة من الإعداد (fail-open) + تخصيص + dedup + ترتيب + **تأكيد عدم تجاوز النافذة** (ثابت CI). **DoD:** الميزانية لا تُتجاوز أبداً، حتمي، اختبارات.
 - **M4 — Orchestrator + hook:** `assemble_context` + `ingest` موحّد + ربط الـ hook (قراءة/كتابة inline-async) + توجيه + fail-open + JSON/request_id + HITL. **DoD:** end-to-end عبر OWUI، اختبار عزل Postgres حقيقي، بوّابة خضراء.
 - **M5 — ملفات (أساسي) + Eval:** هضم ملفات (تقطيع مسطّح) بعد تأكيد مسار الرفع + golden-set + قياس الجودة. **DoD:** سؤال عن ملف يسترجع المقطع الصحيح، الـ eval يعمل.
 
