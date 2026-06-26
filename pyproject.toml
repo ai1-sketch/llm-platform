@@ -48,7 +48,5 @@ ignore_missing_imports = true  # basic: تجاهل stubs الخارجية غير
 # basic mode: لا strict الآن (تفادي غرق stubs الخارجية gradio/llama_cpp). يُرفع لاحقاً بـ ADR.
 # سياسة: ممنوع `# type: ignore` بلا كود سبب (تُفرَض بالمراجعة).
 
-# ───────────── pytest + coverage (التغطية إشارة لا بوّابة — ADR-008) ─────────────
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-# التغطية إشارة لا بوّابة (ADR-008): شغّلها يدوياً عند الحاجة (pytest --cov) بعد تثبيت pytest-cov.
+# ملاحظة (ADR-025): لا اختبارات/كود بايثون على المسار الأساسي (محرّك السياق متقاعد إلى فرع
+# future/context-engine). إعداد Ruff/Mypy أعلاه يبقى لأي إضافة بايثون مستقبلية.

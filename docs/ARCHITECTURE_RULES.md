@@ -17,21 +17,17 @@
 ├── CLAUDE.md                # عقد المساعد (auto-loaded)
 ├── PROJECT_BLUEPRINT.md     # المخطّط الهندسي المرجعي
 ├── README.md                # مدخل بشري + خريطة الحوكمة
-├── pyproject.toml           # أدوات الجودة (Ruff/Mypy/pytest — ADR-008)
+├── pyproject.toml           # أدوات الجودة (Ruff — ADR-008)
 ├── .pre-commit-config.yaml  # مرآة فحوص CI
 ├── .gitignore
-├── .github/workflows/ci.yml # بوّابة CI (ruff + mypy + pytest + gitleaks)
+├── .github/workflows/ci.yml # بوّابة CI (ruff + gitleaks + تحقّق compose)
 ├── compose/
-│   └── docker-compose.yml   # تعريف الخدمات الستّ (open-webui, litellm, llamacpp, embeddings, postgres, memory)
+│   └── docker-compose.yml   # تعريف الخدمات الأربع (open-webui, litellm, llamacpp, postgres) — ADR-025
 ├── config/                  # كل الإعداد الخارجي (لا أسرار قيمية)
 │   ├── litellm/
-│   │   ├── litellm-config.yaml   # model_list + routing — نقطة التبديل الوحيدة
-│   │   └── memory_hook.py        # hook الذاكرة per-user (يعمل داخل عملية litellm)
+│   │   └── litellm-config.yaml   # model_list + routing — نقطة التبديل الوحيدة
 │   └── env/
 │       └── .env.example          # قالب المتغيّرات (placeholders فقط)
-├── services/
-│   └── memory/              # خدمة الذاكرة per-user (FastAPI + asyncpg)
-├── tests/                   # pytest (ADR-008)
 ├── docs/                    # كل وثائق الحوكمة (هذا الملف وإخوته)
 │   ├── CONSTITUTION.md · ARCHITECTURE_RULES.md · ERROR_AND_OBSERVABILITY_POLICY.md
 │   └── DECISIONS.md · PROGRESS_MAP.md
@@ -48,7 +44,7 @@
 - **R-ARCH-04** — كل وثائق الحوكمة تحت `docs/` فقط؛ الروابط المتبادلة بينها **نسبية ومجاورة** (`./X.md`). فحص: link-checker لا يجد رابطاً معطّلاً (dangling).
 - **R-ARCH-05** — وثائق الحوكمة **الأساسية** (CONSTITUTION · ARCHITECTURE_RULES · ERROR_AND_OBSERVABILITY_POLICY · PROGRESS_MAP) يُستحسن أن تكون **< 180 سطراً** (إرشادي بمراجعة بشرية — Ruff بلا قاعدة طول-ملف، [ADR-008](DECISIONS.md)؛ لا بوّابة CI). الإيجاز فضيلة، والتجاوز يستوجب التقسيم. **مُعفى:** سجلّ ADR ([DECISIONS](DECISIONS.md)، ينمو append-only) · `docs/specs/` · `research/` · [PROJECT_BLUEPRINT](../PROJECT_BLUEPRINT.md) (مرجع موسوعي).
 
-> `services/` أُنشئ فعلاً (خدمة `memory`، [ADR-012](DECISIONS.md)/[ADR-013](DECISIONS.md))؛ `infra/` **لا يُنشأ الآن** (YAGNI، يُنشأ بقرار ADR عند الحاجة).
+> `services/` و`tests/` (خدمة `memory` + اختباراتها) **متقاعدة إلى فرع `future/context-engine`** ([ADR-025](DECISIONS.md))؛ المسار الأساسي بلا كود بايثون. `infra/` لا يُنشأ الآن (YAGNI).
 
 ---
 
@@ -61,7 +57,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
  (frontend)         (gateway)         (engine)
 ```
 
-- **R-ARCH-10** — **العميل لا يعرف المحرّك.** أي frontend / app / agent / script يتّصل **حصراً** بعنوان البوّابة (`http://litellm:4000/v1`). فحص: `api_base`/`base_url` في أي عميل = منفذ البوّابة فقط، لا منفذ المحرّك (`llamacpp:8000`). **يشمل ذلك التضمين:** خدمة `memory` تطلب `embed-default` عبر البوّابة (`litellm:4000/v1`) لا المحرّك مباشرةً ([ADR-023](DECISIONS.md)، قرار المالك: لا ثقوب في العقد الموحّد — للتوسّع).
+- **R-ARCH-10** — **العميل لا يعرف المحرّك.** أي frontend / app / agent / script يتّصل **حصراً** بعنوان البوّابة (`http://litellm:4000/v1`). فحص: `api_base`/`base_url` في أي عميل = منفذ البوّابة فقط، لا منفذ المحرّك (`llamacpp:8000`). **يشمل ذلك التضمين** (القاعدة تبقى سارية لأي عميل/تكامل). مثال محرّك السياق (`memory`→`embed-default` عبر البوّابة، [ADR-023](DECISIONS.md)) متقاعد إلى فرع `future/context-engine` ([ADR-025](DECISIONS.md)).
 - **R-ARCH-11** — الاتصال **وحيد الاتجاه نزولاً** فقط. ممنوع أن يستدعي المحرّك البوّابة، أو تستدعي البوّابة الواجهة. فحص: مراجعة `depends_on` وعناوين URL في `docker-compose.yml`.
 - **R-ARCH-12** — **ممنوع تجاوز طبقة** (layer skipping): الواجهة لا تكلّم المحرّك مباشرةً. كل عبور يمرّ بالطبقة المجاورة عبر عقدها.
 - **R-ARCH-13** — **العقد بين الطبقات هو `OpenAI-compatible API` حصراً** (`/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`). أي تكامل لا يتكلّم هذا العقد يُرفض (تجسيد ADR-001).
@@ -82,7 +78,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
 ## 4. اصطلاحات التسمية (Naming)
 
 - **R-ARCH-30** — **الملفات والمجلدات:** `kebab-case` (مثل `litellm-config.yaml`). الاستثناء الوحيد: الوثائق بصيغة `SCREAMING_SNAKE_CASE.md`.
-- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `llamacpp`, `embeddings`, `postgres`, `memory` (أُضيفت `memory` بـ [ADR-012](DECISIONS.md)/[ADR-013](DECISIONS.md)، و`embeddings` بـ [ADR-019](DECISIONS.md)/[ADR-022](DECISIONS.md)). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة. (مثال البلوبرنت §10.2 يستخدم حالياً `engine/gateway/webui/db` ويجب تصحيحه لمطابقة هذه القاعدة — يُحسم بـ ADR.)
+- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `llamacpp`, `postgres` (4 خدمات بعد [ADR-025](DECISIONS.md)؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine`). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة. (مثال البلوبرنت §10.2 يستخدم حالياً `engine/gateway/webui/db` ويجب تصحيحه لمطابقة هذه القاعدة — يُحسم بـ ADR.)
 - **R-ARCH-32** — **متغيّرات البيئة:** `SCREAMING_SNAKE_CASE` ببادئة المكوّن: `LITELLM_*`, `WEBUI_*`, `DATABASE_URL`. تتطابق حرفياً مع `config/env/.env.example`.
 - **R-ARCH-33** — **أسماء الموديلات في `model_list`:** `model_name` لصيقة عرض/منتج يختارها المالك (قد تكون اسم الموديل الفعلي مثل `Gemma 4`، أو اسماً منطقياً مثل `local-chat`) — [ADR-017](DECISIONS.md). **حياديّة التبديل تُصان على مستوى الكود/العقد** (العميل يستهدف `api_base` للبوّابة بلا كود خاص بمحرّك — R-ARCH-10/14)، لا على مستوى اللصيقة؛ فإن ذكرت اللصيقة الموديل تُحدَّث عند التبديل (سطر واحد). فحص: لا كود عميل يربط بمحرّك بعينه.
 - **R-ARCH-34** — حقل `service` في كل log/خطأ (R-ERR-05) **يطابق حرفياً اسم خدمة Docker** المعتمدة في R-ARCH-31 (`litellm`، لا `litellm-gateway`)؛ كي يعمل تتبّع `request_id` عبر الطبقات بـ grep واحد (R-ERR-25).
