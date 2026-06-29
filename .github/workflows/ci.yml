@@ -31,6 +31,14 @@ jobs:
         run: |
           printf 'POSTGRES_PASSWORD=x\nLITELLM_MASTER_KEY=x\nLITELLM_SALT_KEY=x\nLLAMACPP_API_KEY=x\nOPENWEBUI_LITELLM_KEY=x\nWEBUI_SECRET_KEY=x\n' > /tmp/ci.env
           docker compose -f compose/docker-compose.yml --env-file /tmp/ci.env config -q
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Architectural invariants (executable governance — ADR-026)
+        # يفرض R-ARCH-31/24 + R-LAW-06 على compose آلياً (بدل فحص بشري). e2e للدردشة محلّي (يحتاج GPU).
+        run: |
+          pip install pyyaml==6.0.2
+          python .github/scripts/check_invariants.py
 
   secrets:
     runs-on: ubuntu-latest
