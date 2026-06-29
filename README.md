@@ -51,7 +51,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (Gemma 4، GPU
    ```bash
    docker compose --env-file config/env/.env -f compose/docker-compose.yml up -d
    ```
-4. **تحقّق:** افتح http://127.0.0.1:3000 وأرسل رسالة. إن ظهر خطأ، راجع حالة الخدمات وسجلّاتها (`docker compose … ps` / `logs`). فحص GPU المسبق: `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi`.
+4. **تحقّق:** افتح http://127.0.0.1:3000 وأرسل رسالة. إن ظهر خطأ، راجع حالة الخدمات وسجلّاتها (`docker compose … ps` / `logs`). فحص GPU المسبق: `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi`. **تفاصيل التشغيل والأعطال الشائعة: [docs/RUNBOOK.md](docs/RUNBOOK.md).**
 
 ## 🧪 التطوير (Developer setup)
 المسار الأساسي بلا كود بايثون؛ بوّابة الجودة = **ruff (lint/format) + gitleaks** + تحقّق `compose config` (تُفرَض في CI: [.github/workflows/ci.yml](.github/workflows/ci.yml)). *(mypy + pytest من سلسلة [ADR-008](docs/DECISIONS.md) يعودان تلقائياً متى عاد كود بايثون للمسار الأساسي.)*
