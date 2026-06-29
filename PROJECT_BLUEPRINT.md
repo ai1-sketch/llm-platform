@@ -313,7 +313,7 @@ graph TD
 **لماذا:** الهندسة المفرطة هي نمط فشل مُسمّى ("مطرقة لكسر جوزة"). البيانات صارخة: نحو 95% من تجارب GenAI المؤسسية لا تُحدث أثراً ملموساً، وقرابة 30% تُهجَر بعد POC — والسبب الغالب تشغيلي/بنيوي لا جودة الموديل. التعقيد المبكّر يستنزف الجهد دون عائد.
 
 **كيف يظهر عملياً:**
-- المرحلة الأولى = ثلاث حاويات فقط: Open WebUI ← LiteLLM ← المحرّك المحلي، عبر Docker Compose، مع Postgres لحالة البوّابة.
+- المرحلة الأولى = ثلاث حاويات فقط: Open WebUI ← LiteLLM ← المحرّك المحلي، عبر Docker Compose، مع Postgres لحالة البوّابة. *(الآن: 4 خدمات فعليّة — open-webui · litellm · llamacpp · postgres — [ADR-025](docs/DECISIONS.md).)*
 - نؤجّل صراحةً: Kubernetes، autoscaling (KEDA/Karpenter)، Redis متعدّد النسخ، MIG، vLLM — كلها **"لاحقاً، ليس الآن"**.
 - القاعدة: نُشغّل البسيط، نفهم القطع المتحرّكة، ثم نضيف الضوابط التي يفرضها واقعنا — لا التي يفرضها كتالوج الميزات.
 
@@ -402,6 +402,8 @@ flowchart LR
 ### 3.2 سجل القرارات (ADR Log)
 
 جدول مختصر بأسلوب Architecture Decision Record. كل صف = قرار واحد بسياقه وبدائله وحالته. التفاصيل الموسّعة للبدائل المرفوضة في [القسم 3.3](#03-decisions-rejected).
+
+> ℹ️ هذه ملخّص قرارات الوثيقة المبكّر (ADR-01..ADR-08، ترقيم محلي تاريخي)؛ **السجلّ الرسمي المعتمد والمُعاد ترقيمه = [docs/DECISIONS.md](docs/DECISIONS.md) (ADR-001..025)** — راجعه لأي قرار وحالته الحالية.
 
 | # | القرار | السياق | الخيارات المدروسة | الاختيار | السبب المختصر | الحالة |
 |---|--------|--------|-------------------|----------|----------------|--------|
@@ -570,7 +572,7 @@ graph TD
 
 > ✅ المحصّلة العملية: تبديل المحرّك = سطر `base_url` واحد في إعداد البوّابة. الانتقال للسحابة = تشغيل **نفس الصور** على عتاد أكبر. لا إعادة بناء، ولا تعديل على الواجهة أو الكود الذي يستهلك الـ API.
 
-> ⚠️ تذكير من دليل التفكير: كل ما هو في عمود "السحابة لاحقاً" هو **تصميم مُعَدّ سلفاً، لا تنفيذ مبكّر**. المرحلة الأولى تبقى بسيطة فعلاً: ثلاث حاويات (Open WebUI + LiteLLM + محرّك) و PostgreSQL. لا Kubernetes ولا Redis ولا autoscaling الآن.
+> ⚠️ تذكير من دليل التفكير: كل ما هو في عمود "السحابة لاحقاً" هو **تصميم مُعَدّ سلفاً، لا تنفيذ مبكّر**. المرحلة الأولى تبقى بسيطة فعلاً: ثلاث حاويات (Open WebUI + LiteLLM + محرّك) و PostgreSQL. لا Kubernetes ولا Redis ولا autoscaling الآن. *(الآن: 4 خدمات فعليّة — open-webui · litellm · llamacpp · postgres؛ RAG/Memory عبر OWUI فعّالان — [ADR-025](docs/DECISIONS.md).)*
 
 <a id="04-architecture-api-contract"></a>
 
@@ -584,7 +586,7 @@ graph TD
 |----------|-------|
 | `POST /v1/chat/completions` | محادثة الدردشة (الأساسي) — يدعم streaming. |
 | `POST /v1/completions` | إكمال نصّي بسيط (إرث/توافق). |
-| `POST /v1/embeddings` | المتجهات لـ RAG (لاحقاً). |
+| `POST /v1/embeddings` | المتجهات لـ RAG. *(الآن: 4 خدمات؛ RAG/Memory عبر OWUI فعّالان — [ADR-025](docs/DECISIONS.md). تضمين OWUI محلّي خارج البوّابة، استثناء موثّق.)* |
 | `GET  /v1/models` | قائمة الموديلات المتاحة — تظهر تلقائياً في منتقي Open WebUI. |
 
 **قواعد الالتزام بالعقد:**
@@ -621,7 +623,7 @@ graph TD
 1. **الإدخال:** الموظف يكتب رسالة في Open WebUI (المتصفّح → المنفذ `3000`). تكون جلسته موثّقة مسبقاً عبر تسجيل الدخول (SSO لاحقاً).
 2. **التغليف:** Open WebUI يبني طلب `POST /v1/chat/completions` ويرسله إلى البوّابة على `http://litellm:4000/v1`، حاملاً **المفتاح الافتراضي** (virtual key) لا أي مفتاح خام.
 3. **المصادقة والحوكمة في البوّابة:** LiteLLM يتحقّق من المفتاح، ويطبّق الحصص/الميزانية (budget/rpm/tpm)، ويسجّل البيانات الوصفية (metadata) للتدقيق.
-4. **التوجيه:** بناءً على اسم الموديل المطلوب، تختار البوّابة الوجهة من `model_list` — اليوم محرّك `llama_cpp.server` المحلي (`http://engine:8000/v1`)؛ ولاحقاً قد يكون vLLM سحابياً أو موديلاً مُداراً، **بنفس الطلب تماماً**.
+4. **التوجيه:** بناءً على اسم الموديل المطلوب، تختار البوّابة الوجهة من `model_list` — اليوم محرّك llama.cpp المحلي الذي يخدم Gemma 4 (المعتمد: `http://llamacpp:8080/v1` — [compose/docker-compose.yml](compose/docker-compose.yml))؛ ولاحقاً قد يكون vLLM سحابياً أو موديلاً مُداراً، **بنفس الطلب تماماً**.
 5. **الاستدلال:** المحرّك يحمّل السياق على الـ GPU، يولّد التوكنات، ويبثّها (streaming) عائدةً عبر العقد نفسه.
 6. **العودة والتسجيل:** البوّابة تمرّر البثّ إلى الواجهة، تحدّث الإنفاق، وتغلق سجلّ الطلب. الموظف يرى الإجابة تتدفّق حرفاً حرفاً.
 
@@ -693,10 +695,12 @@ flowchart LR
 
 **كيف يُضبط (إشاري):**
 
+> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [compose/docker-compose.yml](compose/docker-compose.yml): المحرّك الحالي صورة llama.cpp server تخدم **Gemma 4** على المنفذ **8080**، لا `llama_cpp.server`/Qwen على 8000.)*
+
 ```bash
-# المرحلة الأولى — محلياً على الـ GPU
+# المرحلة الأولى — محلياً على الـ GPU (نموذج تاريخي؛ المعتمد = Gemma 4 على :8080)
 python -m llama_cpp.server \
-  --model /models/qwen3-1.7b-q4.gguf \
+  --model /models/<gguf-model>.gguf \
   --n_gpu_layers -1 \      # حمّل كل الطبقات على الـ GPU إن أمكن
   --n_ctx 8192 \
   --host 0.0.0.0 --port 8000
@@ -705,7 +709,7 @@ python -m llama_cpp.server \
 
 ```bash
 # لاحقاً — على GPU سحابي (نفس العقد، صندوق أكبر)
-vllm serve Qwen/Qwen3-1.7B --port 8000
+vllm serve <hf-model-id> --port 8000
 ```
 
 **كيف يتوسّع:** أفقياً عبر تشغيل نسخ متعددة من الحاوية خلف الـ gateway (LiteLLM يوزّع الحمل). عمودياً عبر GPU أكبر (G5/L4 → A100/H100). على Kubernetes: طلب `nvidia.com/gpu` في الـ manifest، مع `--ipc=host`/`shm_size` كافٍ لـ tensor parallelism، وprobes طويلة لتحميل الموديل.
@@ -735,13 +739,15 @@ vllm serve Qwen/Qwen3-1.7B --port 8000
 
 **كيف يُضبط (إشاري):**
 
+> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [config/litellm/litellm-config.yaml](config/litellm/litellm-config.yaml): الموديل الحالي `Gemma 4` عبر `api_base: http://llamacpp:8080/v1`، لا Qwen عبر `engine:8000`.)*
+
 ```yaml
-# litellm-config.yaml
+# litellm-config.yaml — هيكل إشاري (المعتمد: Gemma 4 على http://llamacpp:8080/v1)
 model_list:
-  - model_name: local-qwen           # الاسم الذي يراه المستخدم
+  - model_name: Gemma 4              # الاسم الذي يراه المستخدم
     litellm_params:
-      model: openai/qwen3-1.7b
-      api_base: http://engine:8000/v1 # المحرّك المحلي — هذا السطر هو "مفتاح التبديل"
+      model: openai/<model-id>
+      api_base: http://llamacpp:8080/v1 # المحرّك المحلي — هذا السطر هو "مفتاح التبديل"
       api_key: dummy
   # لاحقاً: أضف موديلاً مُداراً دون لمس أي شيء آخر
   # - model_name: cloud-claude
@@ -753,7 +759,7 @@ litellm_settings:
 ```bash
 # توليد مفتاح افتراضي لفريق (إشاري)
 POST /key/generate
-{ "models": ["local-qwen"], "max_budget": 10, "budget_duration": "30d",
+{ "models": ["Gemma 4"], "max_budget": 10, "budget_duration": "30d",
   "rpm_limit": 60, "team_id": "team-dev" }
 ```
 
@@ -821,14 +827,16 @@ WEBUI_URL=https://chat.company.internal
 
 **كيف يُضبط (إشاري):** يُمرَّر المجلّد للحاوية كـ volume، والمسار يُحقن عبر متغيّر بيئة لا hard-code:
 
+> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [compose/docker-compose.yml](compose/docker-compose.yml) و[config/env/.env.example](config/env/.env.example): الخدمة اسمها `llamacpp`، والمسار يأتي من `MODEL_DIR`/`MODEL_FILE` لملفّ Gemma 4 GGUF.)*
+
 ```yaml
-# docker-compose (إشاري)
+# docker-compose (إشاري — الخدمة المعتمدة اسمها llamacpp)
 services:
   engine:
     volumes:
       - ${MODELS_DIR:-./models}:/models:ro   # المسار قابل للتبديل عبر env
     environment:
-      - MODEL_PATH=/models/qwen3-1.7b-q4.gguf
+      - MODEL_PATH=/models/<gguf-model>.gguf
 ```
 
 **كيف يتوسّع:** من قرص محلي → volume مشترك على الشبكة → object storage سحابي (يُحمَّل الموديل عند بدء الحاوية، أو يُربط كـ PVC). على K8s قد تستخدم MIG/time-slicing لزيادة كثافة الـ GPU، لكن مصدر الموديل يبقى منفصلاً عن الحاوية.
@@ -990,7 +998,7 @@ Gradio لا يُرحَّل — كان أداة استكشاف فقط. الواج
 - ❌ **لا Kubernetes، لا Terraform، لا HA** — حاوية واحدة لكل خدمة تكفي تماماً.
 - ❌ **لا vLLM** — لا تنفع لمستخدم/مستخدمين على 6GB وتحجز VRAM دون فائدة.
 - ❌ **لا SSO/OIDC، لا PII redaction، لا Redis** — مؤجَّلة كلها إلى Phase 3.
-- ❌ **لا vector DB إنتاجي/RAG معقّد** — إن لزمت تجربة RAG، اتركها بأبسط صورة. ("لاحقاً، ليس الآن.")
+- ❌ **لا vector DB إنتاجي/RAG معقّد** — إن لزمت تجربة RAG، اتركها بأبسط صورة. ("لاحقاً، ليس الآن.") *(الآن: 4 خدمات؛ RAG/Memory عبر OWUI المدمج فعّالان — [ADR-025](docs/DECISIONS.md).)*
 - ❌ لا تكشف منفذ البوّابة، ولا تستخدم trusted-header auth (قابل للانتحال).
 
 ---
@@ -1149,11 +1157,11 @@ flowchart LR
 **مفتاح واحد لكل (فريق / تطبيق / مستخدم)**، مع نطاق ومحدّدات صريحة عبر `POST /key/generate`:
 
 ```bash
-# يصدره الـ admin بمفتاح master فقط
+# يصدره الـ admin بمفتاح master فقط (الموديل المعتمد حالياً = "Gemma 4" — config/litellm/litellm-config.yaml)
 POST /key/generate
 Authorization: Bearer sk-<master-key>
 {
-  "models": ["qwen3-1.7b", "gemma-2-2b"],   # نطاق مقيّد
+  "models": ["Gemma 4"],                     # نطاق مقيّد (مثال: أسماء الموديلات المعرّفة في البوّابة)
   "max_budget": 20, "budget_duration": "30d",
   "rpm_limit": 60, "tpm_limit": 100000,
   "max_parallel_requests": 4,
@@ -1319,7 +1327,7 @@ flowchart LR
 
 بعد أن اكتمل بناء ناطحة السحاب وسكنها الموظفون، يبدأ العمل الحقيقي: **الصيانة بعد السكن**. لا تُقاس المنصّة بيوم إطلاقها، بل بقدرتها على البقاء صحيّة وواضحة التكلفة على مدى الأشهر. هذا القسم يضع لوحة التحكّم (المراقبة)، وأنظمة الإنذار (فحوص الصحة والـ runbooks)، وعدّاد الكهرباء (نموذج التكلفة) التي تُبقي المبنى يعمل دون مفاجآت.
 
-> 💡 المبدأ الحاكم هنا: **البوّابة (LiteLLM) هي مصدر الحقيقة**. لأن كل حركة المرور تمرّ عبرها (راجع [المعمارية](#03-architecture)), فهي المكان الطبيعي لقياس التوكنات والتكلفة والكمون لكل مستخدم — دون الحاجة لأدوات منفصلة لكل محرّك.
+> 💡 المبدأ الحاكم هنا: **البوّابة (LiteLLM) هي مصدر الحقيقة**. لأن كل حركة المرور تمرّ عبرها (راجع [المعمارية](#04-architecture)), فهي المكان الطبيعي لقياس التوكنات والتكلفة والكمون لكل مستخدم — دون الحاجة لأدوات منفصلة لكل محرّك.
 
 ---
 
@@ -1354,7 +1362,7 @@ flowchart LR
 
 ### 8.2 فحوص الصحة (Health Checks)
 
-كل حاوية يجب أن تُعلن عن صحتها. هذه أساس أي إعادة تشغيل تلقائي الآن، وأساس probes في Kubernetes [لاحقاً](#07-deployment).
+كل حاوية يجب أن تُعلن عن صحتها. هذه أساس أي إعادة تشغيل تلقائي الآن، وأساس probes في Kubernetes [لاحقاً](#06-phases-phase3).
 
 | المكوّن | فحص الصحة | ملاحظة |
 |---|---|---|
@@ -1391,18 +1399,20 @@ flowchart LR
 
 ### 8.4 Runbooks مختصرة
 
-دليل تشغيل سريع للأعطال الشائعة. أبقِها قصيرة وقابلة للتنفيذ تحت الضغط.
+> ℹ️ **runbook التشغيل المعتمد والمحدّث = [docs/RUNBOOK.md](docs/RUNBOOK.md)** (الستاك الحيّ: 4 خدمات، الأعطال الشائعة، توليد مفتاح OWUI، تدفّق RAG/Memory). الأوامر أدناه **رؤية-أصلية/إيضاحية** (حقبة `engine:8000`) — للحقائق التشغيلية الجارية اعتمد RUNBOOK وملفّات `compose/`·`config/`.
+
+دليل مفاهيمي سريع لأنماط الأعطال (المنفذ/الأسماء المعتمدة في RUNBOOK: المحرّك `llamacpp` على `:8080`):
 
 **🔴 المحرّك لا يستجيب / أخطاء 5xx من البوّابة**
-1. افحص صحة المحرّك: `curl http://localhost:8000/v1/models`.
-2. افحص سجلّ الحاوية: `docker logs <engine> --tail 100`.
+1. افحص صحة المحرّك داخل الشبكة (المعتمد: `llamacpp:8080` — إيضاحي: `http://localhost:8000/v1/models`).
+2. افحص سجلّ الحاوية: `docker compose logs llamacpp --tail 100`.
 3. ابحث عن `CUDA out of memory` → الموديل/السياق أكبر من الـ VRAM.
-4. الحل السريع: قلّل `n_ctx` أو حمّل موديلاً أصغر أو أعد التشغيل `docker compose restart <engine>`.
+4. الحل السريع: قلّل `CTX_SIZE` أو حمّل موديلاً أصغر أو أعد التشغيل `docker compose restart llamacpp`.
 
 **🔴 بطء شديد / TTFT مرتفع**
 1. هل عدد المستخدمين المتزامنين ارتفع؟ llama.cpp يُسلسل الطلبات فعلياً وينهار تحت التزامن.
 2. افحص `nvidia-smi` — هل الكرت مشبع 100%؟
-3. الحل المؤقت: قائمة انتظار / تقليل التزامن. الحل الجذري: الترقية إلى vLLM (راجع [خطة التوسّع](#06-scaling)).
+3. الحل المؤقت: قائمة انتظار / تقليل التزامن. الحل الجذري: الترقية إلى vLLM (راجع [خطة التوسّع](#06-phases-phase2)).
 
 **🔴 مستخدم تجاوز ميزانيته / مفتاح مُساء استخدامه**
 1. `GET /key/info?key=...` لرؤية الإنفاق.
@@ -1562,7 +1572,7 @@ flowchart LR
 | **High Availability (HA)** | البوّابة أصبحت نقطة فشل واحدة تمنع كل الوصول | عدّة نسخ LiteLLM خلف load balancer + **PostgreSQL** للمفاتيح/الميزانيات + **Redis** لمزامنة الحصص عبر النسخ | بدونها تنحرف الحصص/الميزانيات بين النسخ |
 | **Multi-region** | متطلّبات كمون جغرافي أو سيادة بيانات | تكرار نفس الحاويات في أقاليم متعدّدة + توجيه جغرافي؛ External Secrets Operator لتجريد مخزن الأسرار لكل سحابة | نفس الـ manifests؛ الفروق في Terraform vars فقط |
 
-> ⚠️ تحذير ضدّ الهندسة المفرطة: vLLM يحجز ~90% من الـ VRAM وميزته هي throughput تحت تزامن عالٍ — لا تنقل إليه أو تُفعّل autoscaling/MIG لمستخدم واحد أو فريق صغير. القاعدة الفاصلة: **llama.cpp/Ollama كافٍ حتى ~10 مستخدمين؛ الانتقال لـ vLLM + التوسيع يبدأ حين تشارك GPU عبر فريق أو تحتاج كموناً متوقّعاً تحت الحمل.** انظر [القرار المعماري](#05-phases-phase1) كأساس ثابت لا يتغيّر مع كل هذه الإضافات.
+> ⚠️ تحذير ضدّ الهندسة المفرطة: vLLM يحجز ~90% من الـ VRAM وميزته هي throughput تحت تزامن عالٍ — لا تنقل إليه أو تُفعّل autoscaling/MIG لمستخدم واحد أو فريق صغير. القاعدة الفاصلة: **llama.cpp/Ollama كافٍ حتى ~10 مستخدمين؛ الانتقال لـ vLLM + التوسيع يبدأ حين تشارك GPU عبر فريق أو تحتاج كموناً متوقّعاً تحت الحمل.** انظر [القرار المعماري](#06-phases-phase1) كأساس ثابت لا يتغيّر مع كل هذه الإضافات.
 
 > ✅ ملاحظة اقتصادية حاسمة قبل أي شراء GPU: الـ APIs المُدارة أرخص في الأغلبية الساحقة من الحالات (≈87%). نقطة التعادل لتبرير الاستضافة الذاتية تقارب **5.6–6.8 مليون token/شهر** (مقابل Claude Sonnet/GPT-4o) وتصل لـ ≈11 مليار token/شهر للتعادل الحسابي الصرف. وتذكّر أن إيجار الـ GPU الخام ليس سوى 30–40% من الكلفة الحقيقية (المضاعف الفعلي 2.5–3×).
 
@@ -1761,22 +1771,24 @@ volumes:
   pgdata:
 ```
 
-> ⚠️ ملاحظة GPU على ويندوز: التمرير يعمل عبر **WSL2 backend فقط**، وداخل WSL2 ثبّت `cuda-toolkit-12-x` حصراً — **لا** تثبّت أي تعريف NVIDIA لينكس وإلا تعطّل التمرير. (التفاصيل في [القسم 3](#03-decisions-windows-gpu) / سجل القرارات.)
+> ⚠️ ملاحظة GPU على ويندوز: التمرير يعمل عبر **WSL2 backend فقط**، وداخل WSL2 ثبّت `cuda-toolkit-12-x` حصراً — **لا** تثبّت أي تعريف NVIDIA لينكس وإلا تعطّل التمرير. (التفاصيل في [القسم 3](#03-decisions) وسجلّ القرارات المعتمد [docs/DECISIONS.md](docs/DECISIONS.md).)
 
 <a id="10-appendix-litellm"></a>
 
 ### 10.3 مثال إشاري: هيكل إعداد LiteLLM (`model_list` يشير للمحرّك)
 
 > 💡 جوهر "نفس الشكل، صناديق أكبر": `model_list` يربط اسماً منطقياً (يراه المستخدم) بـ `api_base` للمحرّك. **التبديل للسحابة = تغيير سطر `api_base` واحد.**
+>
+> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [config/litellm/litellm-config.yaml](config/litellm/litellm-config.yaml): الموديل الحالي `Gemma 4` عبر `api_base: http://llamacpp:8080/v1`.)*
 
 ```yaml
-# مثال إشاري — litellm-config.yaml
+# مثال إشاري — litellm-config.yaml (المعتمد: Gemma 4 على http://llamacpp:8080/v1)
 model_list:
   # الموديل المحلي عبر llama.cpp اليوم
-  - model_name: qwen3-local                    # الاسم الذي يراه العميل/الواجهة
+  - model_name: Gemma 4                        # الاسم الذي يراه العميل/الواجهة
     litellm_params:
       model: openai/<gguf-model-id>            # بادئة openai/ = واجهة متوافقة
-      api_base: http://engine:8000/v1          # ← غيّر هذا فقط للانتقال لـ vLLM/السحابة
+      api_base: http://llamacpp:8080/v1        # ← غيّر هذا فقط للانتقال لـ vLLM/السحابة
       api_key: "dummy"                          # المحرّك المحلي لا يتحقق
 
   # لاحقاً، ليس الآن: مزج موديل مُدار خلف نفس البوّابة
@@ -1799,7 +1811,7 @@ general_settings:
 ```http
 POST /key/generate
 Authorization: Bearer <LITELLM_MASTER_KEY>
-{ "models": ["qwen3-local"], "max_budget": 5,
+{ "models": ["Gemma 4"], "max_budget": 5,
   "budget_duration": "30d", "rpm_limit": 60, "user_id": "alice" }
 ```
 
@@ -1808,15 +1820,17 @@ Authorization: Bearer <LITELLM_MASTER_KEY>
 ### 10.4 أهم متغيّرات البيئة (`.env`)
 
 > ⚠️ ملف `.env` يجب أن يكون خارج Git (`.gitignore`). كل القيم أدناه placeholders.
+>
+> ℹ️ *(مثال إيضاحي/تاريخي — أسماء المتغيّرات المعتمدة في [config/env/.env.example](config/env/.env.example): مفتاح الواجهة الفعلي هو `OPENWEBUI_LITELLM_KEY` (لا `WEBUI_VIRTUAL_KEY`)، والواجهة تشير إلى `http://litellm:4000/v1` لا `gateway`.)*
 
 | المتغيّر | الخدمة | الغرض |
 |---|---|---|
 | `LITELLM_MASTER_KEY` | البوّابة | المفتاح الرئيسي (صيغة `sk-...`) — يُنشئ/يدير المفاتيح |
 | `LITELLM_SALT_KEY` | البوّابة | تشفير بيانات اعتماد المزوّدين المخزّنة |
 | `DATABASE_URL` | البوّابة + DB | اتصال PostgreSQL (لازم للمفاتيح/الميزانيات/الإنفاق) |
-| `WEBUI_VIRTUAL_KEY` | الواجهة | مفتاح افتراضي صادر من البوّابة (وليس مفتاح مزوّد خام) |
+| `OPENWEBUI_LITELLM_KEY` | الواجهة | مفتاح افتراضي صادر من البوّابة (وليس مفتاح مزوّد خام) |
 | `WEBUI_SECRET_KEY` | الواجهة | توقيع الجلسات — ثابت عبر إعادات التشغيل |
-| `OPENAI_API_BASE_URL` | الواجهة | يشير إلى `http://gateway:4000/v1` |
+| `OPENAI_API_BASE_URL` | الواجهة | يشير إلى `http://litellm:4000/v1` |
 | `POSTGRES_PASSWORD` | DB | كلمة مرور قاعدة البيانات |
 
 > 💡 لاحقاً، ليس الآن: عند تعدّد نسخ البوّابة (HA) أضِف `REDIS_URL` لمزامنة الحصص/الميزانيات بدقّة عبر النسخ.
@@ -1827,10 +1841,12 @@ Authorization: Bearer <LITELLM_MASTER_KEY>
 
 ابدأ بسيطاً واعمل أولاً، ثم صلّب لاحقاً. المرحلة الأولى = أساس + ثلاثة طوابق فقط.
 
+> ℹ️ *(قائمة إيضاحية — خطوات التشغيل المعتمدة والمحدّثة في [docs/RUNBOOK.md](docs/RUNBOOK.md): المحرّك الحالي صورة llama.cpp تخدم Gemma 4 على المنفذ 8080، والبوّابة على `http://llamacpp:8080/v1`.)*
+
 - [ ] التحقق من تمرير GPU: تشغيل حاوية اختبار CUDA عبر `--gpus=all` ونجاح `nvidia-smi` داخلها (WSL2 backend).
-- [ ] تجهيز ملف موديل GGUF واحد في مجلد `./models`.
-- [ ] تشغيل خدمة **المحرّك** (`llama_cpp.server`) والتأكد أنها تستجيب على `/v1/models` داخلياً.
-- [ ] إعداد `litellm-config.yaml`: `model_list` واحد يشير إلى `http://engine:8000/v1`.
+- [ ] تجهيز ملف موديل GGUF واحد في مجلد الموديلات (`MODEL_DIR`).
+- [ ] تشغيل خدمة **المحرّك** (`llamacpp`) والتأكد أنها تستجيب على `/v1/models` داخلياً.
+- [ ] إعداد `litellm-config.yaml`: `model_list` واحد يشير إلى `http://llamacpp:8080/v1`.
 - [ ] ضبط `.env` (Master Key، Salt Key، DATABASE_URL، كلمات المرور) — قيم قوية، خارج Git.
 - [ ] تشغيل **PostgreSQL** + **البوّابة**، والتأكد من ظهور الموديل عبر `GET /v1/models` على البوّابة.
 - [ ] إصدار **مفتاح افتراضي** واحد للواجهة عبر `POST /key/generate`.
@@ -1843,18 +1859,7 @@ Authorization: Bearer <LITELLM_MASTER_KEY>
 
 ### 10.6 فهرس سجل القرارات (ADR) — روابط إلى القسم 3
 
-| المعرّف | القرار | الرابط |
-|---|---|---|
-| ADR-01 | توحيد كل شيء خلف واجهة OpenAI-compatible | [↗](#03-decisions-openai-api) |
-| ADR-02 | `llama.cpp` للابتوب، `vLLM` للسحابة (نفس العقد) | [↗](#03-decisions-engine) |
-| ADR-03 | استبعاد vLLM محلياً (لا native على ويندوز، حجز VRAM) | [↗](#03-decisions-vllm-local) |
-| ADR-04 | LiteLLM كبوّابة مركزية وحيدة | [↗](#03-decisions-gateway) |
-| ADR-05 | Open WebUI كواجهة موظفين | [↗](#03-decisions-frontend) |
-| ADR-06 | Docker + إعدادات خارجية (12-factor) للنقل | [↗](#03-decisions-containers) |
-| ADR-07 | تمرير GPU على ويندوز عبر WSL2 + `cuda-toolkit` فقط | [↗](#03-decisions-windows-gpu) |
-| ADR-08 | استبعاد TGI (وضع الصيانة) للمشاريع الجديدة | [↗](#03-decisions-no-tgi) |
-
-> 💡 معرّفات الروابط أعلاه تتبع بادئة `03-decisions-` لقسم القرارات. إن اختلفت اللاحقة الفعلية في القسم 3، حاذِ هذه المراسي معها.
+> سجلّ القرارات المعتمد والمُرقَّم رسمياً = [docs/DECISIONS.md](docs/DECISIONS.md) (ADR-001..025) — هو المرجع الوحيد لكل قرار معماري وحالته. (الملخّص المبكّر داخل هذه الوثيقة في [القسم 3.2](#03-decisions-adr-log) و[رحلة القرار](#03-decisions-journey).)
 
 <a id="10-appendix-references"></a>
 
