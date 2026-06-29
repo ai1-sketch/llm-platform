@@ -10,20 +10,13 @@
 name: llm-platform
 
 services:
-  llamacpp:                                  # المحرّك: llama.cpp server (CUDA) يخدم Gemma 4 على GPU (ADR-011)
-    image: ghcr.io/ggml-org/llama.cpp@sha256:0a8757369e1e3338386883b23bf1bd5dde46c9060d852a798207fe5fe51e6965   # server-cuda مُثبَّت بـ digest (2026-06-25، يدعم gemma4)
+  llamacpp:                                  # llama-swap يبدّل موديلات llama.cpp عند الطلب على GPU واحد (ADR-027). الاسم يبقى `llamacpp` (R-ARCH-31).
+    image: ghcr.io/mostlygeek/llama-swap@sha256:4bf68364fffc2aee43791cd8a897d39d6d0e671b99b58ef6eb153c7e7f8e9b07   # llama-swap + llama-server CUDA (unified-cuda، مُثبَّت بـ digest 2026-06-29، ADR-027)
     restart: unless-stopped
     volumes:
-      - "${MODEL_DIR:-../models-gemma4}:/models:ro"   # مجلّد GGUF على المضيف (نسبةً لـ compose/ في جذر المستودع) أو مسار مطلق
-    command: >
-      -m /models/${MODEL_FILE:-gemma-4-E2B-it-qat-UD-Q4_K_XL.gguf}
-      --mmproj /models/${MMPROJ_FILE:-mmproj-F16.gguf}
-      --no-mmproj-offload
-      --image-max-tokens ${IMAGE_MAX_TOKENS:-256}
-      --host 0.0.0.0 --port 8080
-      --n-gpu-layers ${N_GPU_LAYERS:-999}
-      --ctx-size ${CTX_SIZE:-4096}
-      --api-key ${LLAMACPP_API_KEY:?LLAMACPP_API_KEY مفقود}
+      - "${MODEL_DIR:-../models-gemma4}:/models:ro"                 # مجلّد GGUF على المضيف
+      - ../config/llama-swap/llama-swap.yaml:/app/config.yaml:ro    # إعداد التبديل (Gemma 4 E2B + 4B)
+    command: ["--config", "/app/config.yaml", "--listen", "0.0.0.0:8080"]
     deploy:
       resources:
         reservations:
@@ -32,8 +25,7 @@ services:
               count: 1
               capabilities: [gpu]
     networks: [internal]
-    # لا healthcheck: الصورة minimal بلا curl. litellm تعتمد عليها بـ service_started وتعيد المحاولة حتى يُحمَّل الموديل.
-    # (عند أوّل تشغيل: docker exec llamacpp sh -c "which curl wget python3" لتقرير healthcheck لاحق على /health.)
+    # لا healthcheck (litellm: service_started). llama-swap يحمّل الموديل عند أوّل طلب (lazy)، ويبدّل في الـ VRAM.
 
   litellm:                                   # البوّابة (R-ARCH-31)
     image: ghcr.io/berriai/litellm@sha256:8f3517476b8293ccc1c3b0da7940d8dabbfe64b013454113f5a3cb68265c439b   # main-stable مُثبَّت بـ digest (2026-06-25)
