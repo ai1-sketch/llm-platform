@@ -4,7 +4,7 @@
 >
 > **الحالة (تاريخياً):** ✅ معتمد ([ADR-019](../DECISIONS.md) + [ADR-020](../DECISIONS.md) مقبولان) — التنفيذ بدأ عند **M0**. · **آخر تحديث:** 2026-06-25 · **المسار المعتمد:** (أ) بناء معماري على Gemma المحلي.
 >
-> هذا الملف هو **المرجع الحيّ** لبناء Context Engine: الآلية، المتطلّبات، وكيف نعمل خطوة-خطوة حتى لا نضيع. يُحدَّث بعد كل خطوة. مرجع القرار في [DECISIONS](../DECISIONS.md)، ونقطة الاستئناف العامة في [PROGRESS_MAP](../PROGRESS_MAP.md)، و**الأساس والمبرّرات** (مقارنة الأطر + المراجعة العدائية) في [research/CONTEXT_ENGINE_RATIONALE](../../research/CONTEXT_ENGINE_RATIONALE.md).
+> هذا الملف **مرجع تصميمي مُجمَّد** (لم يعد حيّاً بعد [ADR-025](../DECISIONS.md)) لبناء Context Engine: الآلية، المتطلّبات، والخطوات. مرجع القرار في [DECISIONS](../DECISIONS.md)، ونقطة الاستئناف العامة في [PROGRESS_MAP](../PROGRESS_MAP.md)، و**الأساس والمبرّرات** (مقارنة الأطر + المراجعة العدائية) في [research/CONTEXT_ENGINE_RATIONALE](../../research/CONTEXT_ENGINE_RATIONALE.md).
 >
 > **ملاحظة حوكمة:** `docs/specs/` يحوي مواصفات هندسية تفصيلية حيّة، **معفاة من حدّ 180 سطر** (R-ARCH-05) الخاص بوثائق الحوكمة الأساسية — مُسجَّل في ADR-019.
 
@@ -172,7 +172,7 @@ Context Builder (خط أنابيب حتمي v1):
 
 <a id="16-نقطة-الاستئناف"></a>
 ## 16. نقطة الاستئناف (Resume)
-**الحالة الآن:** معتمد، **M0 (المتطلّبات المسبقة) مكتمل ✅** — جاهزون لـ **M1**.
+**الحالة (تاريخية — مُتقاعد، [ADR-025](../DECISIONS.md)):** بُنيت المراحل M0→M4b وتُحقِّق منها حيّاً، ثم **تقاعد المحرّك إلى فرع `future/context-engine`**. السجلّ أدناه لِما أُنجِز (مرجع تصميمي، ليس عملاً جارياً على master):
 - ✅ **M0.1 (pgvector)** — صورة `pgvector/pgvector:pg16` (digest مثبّت)؛ البيانات سليمة (74 جدول litellm)؛ الامتدادات مُفعّلة (`vector 0.8.3`, `pg_trgm 1.6`, `unaccent 1.1`)؛ نسخة أمان `C:\tmp\litellm_backup.sql`. checkpoints v10/v11.
 - ✅ **M0.4 (embeddings)** — خدمة `embeddings` (llama.cpp CPU، Qwen3-Embedding-0.6B-Q8_0، `--embedding --pooling last`، digest مثبّت) تخدم `/v1/embeddings`. **`memory` يطلب التضمين عبر البوّابة** (موديل `embed-default`، بمفتاح `MEMORY_LITELLM_KEY`؛ [ADR-023](../DECISIONS.md): العقد الموحّد بلا ثقوب).
 - ✅ **M0.2 (البُعد)** — مقيس فعلياً = **1024** (يؤكّد `halfvec(1024)`). `embedding_model_version = "qwen3-emb-0.6b-q8@1024"`، `embedding_dim = 1024` (مُصدَّر؛ تغييره = عمود v2 + backfill).
@@ -182,4 +182,4 @@ Context Builder (خط أنابيب حتمي v1):
 - ✅ **M2b (القراءة)** — `retrieve.py`: Retrieve الهجين (dense pgvector `<=>` + lexical tsvector → دمج **RRF** عبر المخازن) + نقطة `/v1/retrieve` + fail-soft (لفظي بلا تضمين). **مُتحقَّق حيّاً:** سؤال "ما وظيفتي؟" تصدّره فعلاً حقيقة "مهندس برمجيات" **بلا تطابق كلمات** (تطابق دلالي). 38 pytest. checkpoint v15.
 - ✅ **M3 (Rank + Compose + Budget)** — `rank.py` (درجة حتمية Rel+Rec+Imp+Conf، min-max للصلة، اضمحلال حداثة) + `compose.py` (Context Builder: dedup بـ content_hash + **عدّ توكنات محافظ** + **ميزانية لا تتجاوز أبداً** + كتلة مُسيَّجة "بيانات لا تعليمات") + نقطة `/v1/assemble` (المسار الكامل). **مُتحقَّق حيّاً:** سؤال المهنة → كتلة (76 توكن ≤ 200) تتصدّرها 'مهندس برمجيات'. 49 pytest. checkpoint v16.
 - ✅ **M4a (الربط بالدردشة)** — الـ LiteLLM hook يحقن السياق عبر `/v1/assemble` (دلالي/مُرتَّب/مُوازَن بدل جلب-الكل) بميزانية `CTX_INJECTION_BUDGET` قابلة للضبط؛ fail-open + request_id محفوظان. **مُتحقَّق حيّاً:** خُزِّن سرّ ('سنكري-إكس') في طلب، فاسترجعه Gemma في طلب **منفصل** — الذاكرة **مرئية في الدردشة الفعلية**. 49 pytest. checkpoint v17.
-- **التالي: M4b** — التقاط أدوار المحادثة في `conversation_memory` (عبر `x-openwebui-chat-id`) → ثم **M5** (ملفات + eval harness).
+- ✅ **M4b** (التقاط أدوار المحادثة في `conversation_memory` عبر `x-openwebui-chat-id`) **أُنجِز على فرع `future/context-engine`** — التقاط دور المستخدم + إجابة الموديل (streaming وغير)، مُتحقَّق حيّاً. · **M5** (ملفات + eval) **لم يُبنَ** — مؤجَّل مع المحرّك. **لا استئناف على master؛ أي عمل مستقبلي يبدأ من الفرع.**

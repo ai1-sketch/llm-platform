@@ -9,9 +9,11 @@
 ---
 
 ## 1. الحالة الآن (سطر واحد)
-**P-01 شغّال end-to-end ✅ — المسار الأساسي يعتمد OWUI كلياً (RAG + Memory المدمجة، [ADR-025](DECISIONS.md)).** **4 خدمات** healthy (Open WebUI → LiteLLM → llamacpp/Gemma 4 GPU + postgres/pgvector). الموديل = **Gemma 4** ("Sankari Chat" = اسم الواجهة، ADR-017). الذاكرة/الملفات عبر ميزات OWUI المدمجة (`ENABLE_MEMORIES=true`؛ RAG مستندات). الرؤية تعمل (ADR-014). الواجهة على http://127.0.0.1:3000. **محرّك السياق المخصّص (M0–M4b: ذاكرة دلالية + التقاط محادثة + تضمين عبر البوّابة) متقاعد إلى فرع `future/context-engine`** (ADR-025) — ميزة تطوير مستقبلية، ليست على الأساسي. التالي: تشغيل CI على الأساسي + دمج فرع التقاعد.
+**P-01 شغّال end-to-end ✅ — المسار الأساسي يعتمد OWUI كلياً (RAG + Memory المدمجة، [ADR-025](DECISIONS.md)).** **4 خدمات** healthy (Open WebUI → LiteLLM → llamacpp/Gemma 4 GPU + postgres/pgvector). الموديل = **Gemma 4** ("Sankari Chat" = اسم الواجهة، ADR-017). الذاكرة/الملفات عبر ميزات OWUI المدمجة (`ENABLE_MEMORIES=true`؛ RAG مستندات). الرؤية تعمل (ADR-014). الواجهة على http://127.0.0.1:3000. **محرّك السياق المخصّص (M0–M4b: ذاكرة دلالية + التقاط محادثة + تضمين عبر البوّابة) متقاعد إلى فرع `future/context-engine`** (ADR-025) — ميزة تطوير مستقبلية، ليست على الأساسي. **التقاعد مُنجَز ومدموج في master** (PR #1 + تحقّق PR #2). التالي: **تجهيز تبديل الموديل لـ Gemini** عند النشر (config-only عبر البوّابة) / تخطيط Phase 2.
 
 ## 2. أُنجِز مؤخّراً
+> **ملاحظة تاريخية:** البنود أدناه سجلّ زمني. أي ذكر لـ"5 خدمات" أو لخدمتَي `memory`/`embeddings` يصف حالة **سابقة**؛ الحالة الحالية = **4 خدمات** (OWUI أساسي، [ADR-025](DECISIONS.md)).
+
 - [x] **التحوّل إلى OWUI-أساسي ([ADR-025](DECISIONS.md), 2026-06-26):** أُزيل محرّك السياق المخصّص من master (4 خدمات)، ومحفوظ على فرع `future/context-engine`. **مُتحقَّق حيّاً على الصورة المثبّتة:** ذاكرة OWUI (تخزين + استرجاع دلالي مسافة 0.83 + **حقن في ردّ Gemma**: "الفيروزي") · RAG مستندات (رفع + استخراج + تضمين Chroma + **استرجاع + استشهادات [1] في ردّ Gemma**: "ياقوت-أزرق-2026"). التضمين = all-MiniLM-384 محلّي خارج البوّابة. حساب الاختبار نُظّف بالكامل.
 - [x] إثبات جدوى محلي (Qwen3 / Gemma عبر llama.cpp).
 - [x] كتابة [PROJECT_BLUEPRINT](../PROJECT_BLUEPRINT.md) (المعمارية + فلسفة "نفس الشكل، صناديق أكبر").
@@ -35,15 +37,16 @@
 - [x] **🧪 شبكة أمان (تقوية P-01، 2026-06-25، تجسيد [ADR-008](DECISIONS.md)):** مجموعة **pytest (17 اختبار)** في `tests/` لخدمة الذاكرة والـ hook (conftest يُكفّئ litellm/asyncpg، بلا DB فعلي) تغطّي: bootstrap المخطط، عزل per-user، كشف "تذكّر:"، حقن الذاكرة، fail-open، تمرير request_id، سطر الكلفة، middleware. + **تثبيت إصدارات pre-commit** (ruff v0.12.0, mypy v2.1.0, gitleaks v8.30.1, hooks v6.0.0) + **CI** (`.github/workflows/ci.yml`: ruff+format+mypy+pytest+gitleaks على كل push/PR). البوّابة خضراء محلياً (ruff ✅ mypy ✅ 17 pytest ✅). أُضيف `_require_pool()` في `app.py` (أمان + فحص أنواع).
 - [x] **🧹 توحيد المشروع (2026-06-25، [ADR-018](DECISIONS.md)):** رُقِّي محتوى `llm-platform/` إلى **جذر المستودع** (المستودع = المنصّة، عبر `git mv` محافظاً على الوسوم v1–v7). النموذج الأولي القديم → `legacy/` (متتبَّع، مستثنى من ruff عبر `extend-exclude`). حُذفت البيئات/النماذج القابلة لإعادة الإنشاء (`.venv*`, `wheels/`, `models/` القديم ≈ عشرات آلاف الملفات + ~7.4GB). صُحِّحت المسارات (compose `../models-gemma4`، CI بلا `working-directory`) ودُمج `.gitignore`. **مُتحقَّق:** 5 خدمات healthy من الجذر + POST `/v1/chat/completions`=200 (Gemma 4) + البوّابة خضراء؛ البيانات محفوظة (named volumes). ثم رُفع لمستودع GitHub خاص (`ai1-sketch/llm-platform`) مع CI أخضر.
 - [x] **🔐 إتمام تقوية P-01 (2026-06-25):** **(1) virtual key** — وُلِّد مفتاح LiteLLM افتراضي (alias `open-webui`) عبر `/key/generate` وحلّ محلّ المفتاح الرئيسي في `.env` (الواجهة لم تعد تستخدم master → قابل للإبطال والعزو). **(2) تثبيت digests** — الصور الخمس (llamacpp, litellm, open-webui, postgres + python base للذاكرة) مُثبَّتة بـ `@sha256` (إعادة إنتاج حتمية). **مُتحقَّق حيّاً:** POST=200 عبر المفتاح الافتراضي، 5 خدمات healthy، الصور بـ digest في `compose config`.
-- [~] **🧠 تصميم Context Engine (ذاكرة L2، 2026-06-25):** دراسة موسوعية (5 وكلاء) + ورشة تصميم (16 خبيراً + مراجعة عدائية) → قرار حلّ مخصّص. كُتبت المواصفة المفهرسة [specs/CONTEXT_ENGINE_V1.md](specs/CONTEXT_ENGINE_V1.md) + [ADR-019](DECISIONS.md) + [ADR-020](DECISIONS.md) (pgvector، يعدّل P-01). المسار المعتمد من المالك: (أ) بناء على Gemma، v1 نحيف، تأجيل التلخيص/RLS-كامل/parent-child لـ v2.
+- [x] **🧠 تصميم Context Engine (ذاكرة L2، 2026-06-25):** دراسة موسوعية (5 وكلاء) + ورشة تصميم (16 خبيراً + مراجعة عدائية) → قرار حلّ مخصّص. كُتبت المواصفة المفهرسة [specs/CONTEXT_ENGINE_V1.md](specs/CONTEXT_ENGINE_V1.md) + [ADR-019](DECISIONS.md) + [ADR-020](DECISIONS.md) (pgvector، يعدّل P-01). **↦ هذا المسار مُتقاعد لاحقاً إلى فرع `future/context-engine` ([ADR-025](DECISIONS.md))؛ استُبدل كأساس بـ OWUI المدمج.**
 - [x] **🔬 تدقيق شامل + معالجة (2026-06-26، workflow 74 وكيلاً → 55 اكتشافاً مؤكَّداً):** عولجت كل المراتب بـ**بروتوكول التحقّق العدائي** (لكل دفعة: تنفيذ → تحقّق حيّ → 2–3 مراجعين مستقلّين → checkpoint). نتائج بارزة: **H1** ميزانية واعية بالنافذة + عدّ توكنات = بايتات (مراجعة عدائية كشفت تجاوز نافذة حقيقياً) [ADR-021]؛ **H2** اختبارات تكامل Postgres حقيقي (عزل per-user مُنفَّذ فعلاً، CI gate)؛ **M1** كل تضمين عبر البوّابة [ADR-022/023، قرار المالك]؛ **M2** تعليمة Qwen3 + request_id؛ **M3** فشل صاخب؛ **M5/M6** unaccent + uuid [ADR-024] + README؛ **LOW** non-root + .dockerignore + reqs مثبّتة + CI build + متانة + حوكمة + ملفّات معيارية. 9 دفعات، tags `rem-*`.
 
 ## 3. التالي مباشرةً (Next Up)
 > أمسك بنداً واحداً، نفّذه، ثم حدّث القسمين 2 و 3 (والقسم 1).
 
 1. [x] **تقوية P-01 — مكتملة:** ✓ virtual key (بدل master) · ✓ digests الصور الخمس · ✓ max_tokens=2048 · ✓ رصد P-05 · ✓ رؤية · ✓ اختبارات+CI · ✓ توحيد الجذر + GitHub خاص. كلها مُتحقَّقة حيّاً.
-2. [~] **Context Engine (ذاكرة L2):** **معتمد، التنفيذ جارٍ** ([specs/CONTEXT_ENGINE_V1.md](specs/CONTEXT_ENGINE_V1.md) + [ADR-019](DECISIONS.md)/[ADR-020](DECISIONS.md)). ✅ **M0** (pgvector + embeddings + البُعد=1024 + conversation_id) ✅ **M1** (3 جداول + MemoryItem + Normalize؛ v13) ✅ **M2** (M2a كتابة+تضمين · M2b استرجاع هجين RRF عبر `/v1/retrieve`؛ **استرجاع دلالي مُتحقَّق حيّاً** — سؤال المهنة تصدّره حقيقة 'مهندس برمجيات' بلا تطابق كلمات؛ 38 pytest؛ checkpoint v15). ✅ **M3** (Rank حتمي Rel+Rec+Imp+Conf · Compose: dedup+عدّ محافظ+ميزانية لا تتجاوز+كتلة مُسيَّجة · `/v1/assemble`؛ مُتحقَّق حيّاً 76≤200 توكن؛ 49 pytest؛ checkpoint v16). ✅ **M4a** (ربط الـ hook بـ `/v1/assemble` → **الذاكرة مرئية في الدردشة**؛ مُتحقَّق حيّاً: سرّ خُزِّن واسترجعه Gemma في طلب منفصل؛ checkpoint v17). التالي: **M4b** (التقاط أدوار المحادثة في conversation_memory) → M5 (ملفات+eval).
-3. [ ] التخطيط لـ Phase 2 للمنصّة (سحابة/vLLM عند الحاجة).
+2. [↦ فرع] **Context Engine (ذاكرة L2) — متقاعد إلى `future/context-engine` ([ADR-025](DECISIONS.md)).** بُني M0→M4b ومُتحقَّق حيّاً (استرجاع دلالي هجين RRF + حقن في الدردشة + التقاط محادثة)، ثم **استُبدل كمسار أساسي بذاكرة/RAG المدمجة في OWUI**. **لا عمل عليه على master**؛ يُستأنف من الفرع عند مبرّر (موديل أقوى/حجم). المرجع التصميمي: [specs/CONTEXT_ENGINE_V1.md](specs/CONTEXT_ENGINE_V1.md).
+3. [ ] **تجهيز تبديل الموديل لـ Gemini** عند النشر (config-only في `litellm-config.yaml` عبر البوّابة — R-ARCH-45 / [ADR-023](DECISIONS.md)).
+4. [ ] التخطيط لـ Phase 2 للمنصّة (سحابة/vLLM عند الحاجة).
 
 ---
 
@@ -90,8 +93,13 @@
 | الواجهة | **Open WebUI** متّصلة حصراً بـ LiteLLM | ADR-003 |
 | محرّك الاستدلال | **llama.cpp** الآن / **vLLM** لاحقاً (نفس العقد) | ADR-004 |
 | التشغيل | **Docker Compose أولاً** | ADR-005 |
-| نقطة البدء | موديل **managed أولاً** | ADR-006 |
+| نقطة البدء | موديل managed أولاً (**مُستبدَل بـ ADR-010**) | ADR-006 |
 | نطاق المرحلة الأولى | **لا** Kubernetes / SSO / HA / autoscaling (YAGNI) | ADR-007 |
+| المحرّك المحلي | **Gemma 4 محلي** على GPU (يستبدل managed-first) | ADR-010/011 |
+| اسم الموديل/العلامة | الموديل = "Gemma 4"، الواجهة = "Sankari Chat" | ADR-016/017 |
+| الرؤية | تفعيل الصور (mmproj) عبر العقد | ADR-014 |
+| التضمين عبر البوّابة | كل تضمين عبر LiteLLM (model-agnostic) | ADR-023 |
+| **الحاكم: OWUI أساسي** | اعتماد OWUI RAG+Memory؛ **تقاعد المحرّك المخصّص** إلى فرع | **ADR-025** |
 
 ---
 
