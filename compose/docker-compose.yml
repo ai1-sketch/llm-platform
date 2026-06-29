@@ -75,6 +75,7 @@ services:
       WEBUI_NAME: ${WEBUI_NAME:-Sankari Chat}                 # اسم التطبيق/الواجهة المعروض (علامة، ليس اسم الموديل — ADR-017)
       ENABLE_EVALUATION_ARENA_MODELS: "false"                # نُطفئ موديل Arena الافتراضي (نريد موديلاً واحداً يظهر — Gemma 4)
       ENABLE_MEMORIES: "true"                                # ميزة الذاكرة per-user المدمجة (سطح الحقائق الفعّال — ADR-025)
+      ENABLE_SIGNUP: "false"                                 # لا تسجيل ذاتي مفتوح (تقوية أمنية صريحة — SECURITY/ADR-026؛ لا نترك الافتراضي)
     volumes:
       - openwebui-data:/app/backend/data
     ports:

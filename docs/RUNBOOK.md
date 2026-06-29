@@ -37,5 +37,31 @@ curl -s http://localhost:4000/key/generate -H "Authorization: Bearer $LITELLM_MA
 - **حقائق (Memory):** `Settings > Personalization > Memory` → مجموعة per-user `user-memory-{id}` (بحث دلالي) → حقن كـ"User Context:".
 - **⚠️ استثناء حوكمي ([ADR-025](DECISIONS.md)):** تضمين OWUI **محلّي خارج البوّابة** (ليس عبر LiteLLM، ليس Qwen3-1024) — انحراف موثّق ومقصود عن قاعدة "كل مرور موديل عبر البوّابة" (R-ARCH-10)، قابل للعكس بالإعداد.
 
+## نسخ احتياطي واستعادة (طبقة البيانات — حيث صارت كل القيمة)
+بعد [ADR-025](DECISIONS.md): `openwebui-data` يحوي **كل** ذاكرة المستخدمين + RAG/Chroma؛ `postgres-data` يحوي حالة LiteLLM (مفاتيح/كلفة). **فقدان `LITELLM_SALT_KEY` غير قابل للاستعادة** (R-ARCH-44) — احفظ `.env` بأمان خارج git.
+```bash
+mkdir -p backups   # للاتساق التامّ أوقف الستاك أولاً (down بلا -v)
+docker run --rm -v llm-platform_openwebui-data:/d -v "$PWD/backups":/b alpine \
+  tar czf /b/owui-$(date +%F).tgz -C /d .
+docker run --rm -v llm-platform_postgres-data:/d -v "$PWD/backups":/b alpine \
+  tar czf /b/pg-$(date +%F).tgz -C /d .
+# استعادة (الستاك متوقّف): استبدل "tar czf … ." بـ "tar xzf /b/<ملف> ." على الـ volume نفسه.
+```
+
+## اختبار دخان (smoke) يدوي — مسار الدردشة + request_id
+CI لا يشغّل الموديل (يحتاج GPU)، فالتحقّق end-to-end يدوي عبر هذا السكربت:
+```bash
+KEY=$(grep '^OPENWEBUI_LITELLM_KEY=' config/env/.env | cut -d= -f2-)
+docker exec -e K="$KEY" llm-platform-litellm-1 python -c "
+import os, httpx
+r = httpx.post('http://localhost:4000/v1/chat/completions',
+  headers={'Authorization': 'Bearer ' + os.environ['K']},
+  json={'model':'Gemma 4','stream':False,'max_tokens':16,
+        'messages':[{'role':'user','content':'قل: تمام'}]}, timeout=120)
+print('status', r.status_code, r.json()['choices'][0]['message']['content'][:40])
+"   # 200 + ردّ = المسار حيّ. تتبّع request_id: grep على litellm_call_id في سجلّات litellm.
+```
+*(الثوابت المعمارية الساكنة — أسماء الخدمات/الكشف/الربط — مفروضة آلياً في CI عبر `.github/scripts/check_invariants.py`، ADR-026.)*
+
 ## تبديل الموديل (مثلاً Gemini عند النشر)
 سطر واحد في [config/litellm/litellm-config.yaml](../config/litellm/litellm-config.yaml) (model/api_base + المفتاح في `.env`) — R-ARCH-45 / [ADR-023](DECISIONS.md). البقية بلا تغيير.

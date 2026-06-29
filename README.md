@@ -31,7 +31,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (Gemma 4، GPU
 | [docs/CONSTITUTION.md](docs/CONSTITUTION.md) | الدستور الأعلى: الفلسفة، القوانين، معيار "تمّ"، آلية العمل |
 | [docs/ARCHITECTURE_RULES.md](docs/ARCHITECTURE_RULES.md) | المجلدات، الطبقات، الاستيراد، التسمية، config-driven |
 | [docs/ERROR_AND_OBSERVABILITY_POLICY.md](docs/ERROR_AND_OBSERVABILITY_POLICY.md) | عقيدة "الخطأ يبلّغ عن نفسه" + الرصد |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | سجل القرارات المعمارية (ADR-001..025) |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | سجل القرارات المعمارية (ADR-001..026) |
 | [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) | خريطة التتبّع الحيّة — نقطة الاستئناف |
 | [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md) | المخطّط الهندسي الكامل (الرؤية + الخلفية) |
 | **مرجع / متقاعد** | [docs/specs/CONTEXT_ENGINE_V1.md](docs/specs/CONTEXT_ENGINE_V1.md) + [research/](research/) (CONTEXT_ENGINE_RATIONALE · MEMORY_LANDSCAPE · VISION_SETUP) — مواصفة محرّك السياق المتقاعد + الأبحاث الداعمة ([ADR-025](docs/DECISIONS.md)) |
@@ -45,7 +45,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (Gemma 4، GPU
 ## ▶️ التشغيل
 شرط مسبق: Docker Desktop (خلفية WSL2) + تعريف NVIDIA يدعم GPU. من **جذر المستودع**:
 
-1. **حمّل ملفّ الموديل** (GGUF — كبير، خارج git) → `models-gemma4/`: `gemma-4-E2B-it-qat-*.gguf` + `mmproj-F16.gguf` (للرؤية).
+1. **حمّل ملفّ الموديل** (GGUF — كبير، خارج git) → `models-gemma4/`: `gemma-4-E2B-it-qat-*.gguf` + `mmproj-F16.gguf` (للرؤية). *(اسم الملف يخصّ نسختنا المحلّية من Gemma 4 — لا مصدر عامّ مضمون؛ لأي GGUF آخر اضبط `MODEL_FILE`/`MMPROJ_FILE` في `.env`. اسم الموديل المعروض في البوّابة يبقى مستقلّاً — ADR-017.)*
 2. **الأسرار:** `cp config/env/.env.example config/env/.env`، ثم املأ القيم وولّد الأسرار (`openssl rand -hex 32`)، وولّد الـ virtual key (`OPENWEBUI_LITELLM_KEY`) من litellm عبر `/key/generate`.
 3. **التشغيل:**
    ```bash
