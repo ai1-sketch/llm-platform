@@ -30,8 +30,9 @@
 │       └── .env.example          # قالب المتغيّرات (placeholders فقط)
 ├── docs/                    # كل وثائق الحوكمة (هذا الملف وإخوته)
 │   ├── CONSTITUTION.md · ARCHITECTURE_RULES.md · ERROR_AND_OBSERVABILITY_POLICY.md
-│   └── DECISIONS.md · PROGRESS_MAP.md
-├── research/               # أبحاث داعمة (MEMORY_LANDSCAPE, VISION_SETUP) — معفاة من حدّ 180 سطر
+│   ├── DECISIONS.md · PROGRESS_MAP.md
+│   └── specs/CONTEXT_ENGINE_V1.md   # مواصفة محرّك السياق المتقاعد (مرجع، ADR-025)
+├── research/               # أبحاث داعمة (CONTEXT_ENGINE_RATIONALE, MEMORY_LANDSCAPE, VISION_SETUP) — معفاة من حدّ 180 سطر
 ├── legacy/                 # النموذج الأولي المؤرشَف (Qwen3/Gemma، غير مُشغَّل، خارج البوّابة)
 └── models-gemma4/          # GGUF + mmproj (git-ignored، كبيرة)
 ```
@@ -57,7 +58,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
  (frontend)         (gateway)         (engine)
 ```
 
-- **R-ARCH-10** — **العميل لا يعرف المحرّك.** أي frontend / app / agent / script يتّصل **حصراً** بعنوان البوّابة (`http://litellm:4000/v1`). فحص: `api_base`/`base_url` في أي عميل = منفذ البوّابة فقط، لا منفذ المحرّك (`llamacpp:8000`). **يشمل ذلك التضمين** (القاعدة تبقى سارية لأي عميل/تكامل). مثال محرّك السياق (`memory`→`embed-default` عبر البوّابة، [ADR-023](DECISIONS.md)) متقاعد إلى فرع `future/context-engine` ([ADR-025](DECISIONS.md)).
+- **R-ARCH-10** — **العميل لا يعرف المحرّك.** أي frontend / app / agent / script يتّصل **حصراً** بعنوان البوّابة (`http://litellm:4000/v1`). فحص: `api_base`/`base_url` في أي عميل = منفذ البوّابة فقط، لا منفذ المحرّك (`llamacpp:8080`). **يشمل ذلك التضمين** (القاعدة تبقى سارية لأي عميل/تكامل). مثال محرّك السياق (`memory`→`embed-default` عبر البوّابة، [ADR-023](DECISIONS.md)) متقاعد إلى فرع `future/context-engine` ([ADR-025](DECISIONS.md)).
 - **R-ARCH-11** — الاتصال **وحيد الاتجاه نزولاً** فقط. ممنوع أن يستدعي المحرّك البوّابة، أو تستدعي البوّابة الواجهة. فحص: مراجعة `depends_on` وعناوين URL في `docker-compose.yml`.
 - **R-ARCH-12** — **ممنوع تجاوز طبقة** (layer skipping): الواجهة لا تكلّم المحرّك مباشرةً. كل عبور يمرّ بالطبقة المجاورة عبر عقدها.
 - **R-ARCH-13** — **العقد بين الطبقات هو `OpenAI-compatible API` حصراً** (`/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`). أي تكامل لا يتكلّم هذا العقد يُرفض (تجسيد ADR-001).
@@ -81,7 +82,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
 - **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `llamacpp`, `postgres` (4 خدمات بعد [ADR-025](DECISIONS.md)؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine`). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة (مُحقَّق: الـ compose الفعلي يلتزم). **مُحلّ:** مقاطع PROJECT_BLUEPRINT §10.2 تستخدم أسماء توضيحية (`engine/gateway/webui/db`)، وقد وُسِمت صراحةً كأمثلة إيضاحية مع الإشارة للأسماء المعتمدة ومصدر الحقيقة (`compose/docker-compose.yml`) — فلا تناقض فعليّاً مع القاعدة.
 - **R-ARCH-32** — **متغيّرات البيئة:** `SCREAMING_SNAKE_CASE` ببادئة المكوّن: `LITELLM_*`, `WEBUI_*`, `DATABASE_URL`. تتطابق حرفياً مع `config/env/.env.example`.
 - **R-ARCH-33** — **أسماء الموديلات في `model_list`:** `model_name` لصيقة عرض/منتج يختارها المالك (قد تكون اسم الموديل الفعلي مثل `Gemma 4`، أو اسماً منطقياً مثل `local-chat`) — [ADR-017](DECISIONS.md). **حياديّة التبديل تُصان على مستوى الكود/العقد** (العميل يستهدف `api_base` للبوّابة بلا كود خاص بمحرّك — R-ARCH-10/14)، لا على مستوى اللصيقة؛ فإن ذكرت اللصيقة الموديل تُحدَّث عند التبديل (سطر واحد). فحص: لا كود عميل يربط بمحرّك بعينه.
-- **R-ARCH-34** — حقل `service` في كل log/خطأ (R-ERR-05) **يطابق حرفياً اسم خدمة Docker** المعتمدة في R-ARCH-31 (`litellm`، لا `litellm-gateway`)؛ كي يعمل تتبّع `request_id` عبر الطبقات بـ grep واحد (R-ERR-25).
+- **R-ARCH-34** — حقل `service` في كل log/خطأ (R-ERR-05) **يطابق حرفياً اسم خدمة Docker** المعتمدة في R-ARCH-31 (`litellm`، لا `litellm-gateway`)؛ كي يعمل تتبّع `request_id` عبر الطبقات بـ grep واحد (R-ERR-19).
 
 ---
 

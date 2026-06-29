@@ -16,7 +16,7 @@ ruff check . && ruff format --check .        # lint/format (يمرّ بلا مل
 docker compose -f compose/docker-compose.yml --env-file /tmp/ci.env config -q   # صحّة compose
 pre-commit install                           # يفرض نفس فحوص CI على كل commit
 ```
-نفس الفحوص تُفرَض في CI ([.github/workflows/ci.yml](workflows/ci.yml)). كل تغيير ذي قيمة يمرّ ببوّابة مراجعة §4.
+نفس الفحوص تُفرَض في CI ([.github/workflows/ci.yml](workflows/ci.yml)). *(mypy + pytest من سلسلة [ADR-008](../docs/DECISIONS.md) يعودان متى عاد كود بايثون للمسار الأساسي.)* كل تغيير ذي قيمة يمرّ ببوّابة مراجعة §4. مسار القراءة الكامل في [README](../README.md).
 
 ## رسائل الـ commit
 وصفية، تربط ADR/البند، وتُنهى بـ `Co-Authored-By` عند المساهمة بمساعدة AI.

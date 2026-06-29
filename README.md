@@ -23,6 +23,8 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (Gemma 4، GPU
 
 ## 🗺️ خريطة الحوكمة
 
+> **مسار القراءة:** [PROGRESS_MAP](docs/PROGRESS_MAP.md) (الحالة) ← [CONSTITUTION](docs/CONSTITUTION.md) (القوانين) ← [ARCHITECTURE_RULES](docs/ARCHITECTURE_RULES.md) / [ERROR_AND_OBSERVABILITY_POLICY](docs/ERROR_AND_OBSERVABILITY_POLICY.md) (التفاصيل) ← [DECISIONS](docs/DECISIONS.md) (لماذا).
+
 | الوثيقة | الدور |
 |--------|------|
 | [CLAUDE.md](CLAUDE.md) | عقد المساعد — يُحمّل تلقائياً، القواعد غير القابلة للتفاوض |
@@ -31,7 +33,8 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (Gemma 4، GPU
 | [docs/ERROR_AND_OBSERVABILITY_POLICY.md](docs/ERROR_AND_OBSERVABILITY_POLICY.md) | عقيدة "الخطأ يبلّغ عن نفسه" + الرصد |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | سجل القرارات المعمارية (ADR-001..025) |
 | [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) | خريطة التتبّع الحيّة — نقطة الاستئناف |
-| [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md) | المخطّط الهندسي الكامل (الخلفية + التفاصيل) |
+| [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md) | المخطّط الهندسي الكامل (الرؤية + الخلفية) |
+| **مرجع / متقاعد** | [docs/specs/CONTEXT_ENGINE_V1.md](docs/specs/CONTEXT_ENGINE_V1.md) + [research/](research/) (CONTEXT_ENGINE_RATIONALE · MEMORY_LANDSCAPE · VISION_SETUP) — مواصفة محرّك السياق المتقاعد + الأبحاث الداعمة ([ADR-025](docs/DECISIONS.md)) |
 
 ## ⚖️ المبادئ الحاكمة (مختصر)
 - العقد الثابت: كل تخاطب موديل عبر **OpenAI-compatible API** والبوّابة.
@@ -48,9 +51,10 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (Gemma 4، GPU
    ```bash
    docker compose --env-file config/env/.env -f compose/docker-compose.yml up -d
    ```
+4. **تحقّق:** افتح http://127.0.0.1:3000 وأرسل رسالة. إن ظهر خطأ، راجع حالة الخدمات وسجلّاتها (`docker compose … ps` / `logs`). فحص GPU المسبق: `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi`.
 
 ## 🧪 التطوير (Developer setup)
-المسار الأساسي بلا كود بايثون؛ بوّابة الجودة = **ruff (lint/format) + gitleaks** (تُفرَض في CI: [.github/workflows/ci.yml](.github/workflows/ci.yml)) + التحقّق من صحّة compose:
+المسار الأساسي بلا كود بايثون؛ بوّابة الجودة = **ruff (lint/format) + gitleaks** + تحقّق `compose config` (تُفرَض في CI: [.github/workflows/ci.yml](.github/workflows/ci.yml)). *(mypy + pytest من سلسلة [ADR-008](docs/DECISIONS.md) يعودان تلقائياً متى عاد كود بايثون للمسار الأساسي.)*
 
 ```bash
 pip install ruff==0.12.0 pre-commit

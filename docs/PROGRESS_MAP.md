@@ -12,7 +12,7 @@
 **P-01 شغّال end-to-end ✅ — المسار الأساسي يعتمد OWUI كلياً (RAG + Memory المدمجة، [ADR-025](DECISIONS.md)).** **4 خدمات** healthy (Open WebUI → LiteLLM → llamacpp/Gemma 4 GPU + postgres/pgvector). الموديل = **Gemma 4** ("Sankari Chat" = اسم الواجهة، ADR-017). الذاكرة/الملفات عبر ميزات OWUI المدمجة (`ENABLE_MEMORIES=true`؛ RAG مستندات). الرؤية تعمل (ADR-014). الواجهة على http://127.0.0.1:3000. **محرّك السياق المخصّص (M0–M4b: ذاكرة دلالية + التقاط محادثة + تضمين عبر البوّابة) متقاعد إلى فرع `future/context-engine`** (ADR-025) — ميزة تطوير مستقبلية، ليست على الأساسي. **التقاعد مُنجَز ومدموج في master** (PR #1 + تحقّق PR #2). التالي: **تجهيز تبديل الموديل لـ Gemini** عند النشر (config-only عبر البوّابة) / تخطيط Phase 2.
 
 ## 2. أُنجِز مؤخّراً
-> **ملاحظة تاريخية:** البنود أدناه سجلّ زمني. أي ذكر لـ"5 خدمات" أو لخدمتَي `memory`/`embeddings` يصف حالة **سابقة**؛ الحالة الحالية = **4 خدمات** (OWUI أساسي، [ADR-025](DECISIONS.md)).
+> **ملاحظة تاريخية:** البنود أدناه سجلّ زمني. أي ذكر لـ"5 خدمات" أو لخدمتَي `memory`/`embeddings` يصف حالة **سابقة**؛ الحالة الحالية = **4 خدمات** (OWUI أساسي، [ADR-025](DECISIONS.md)). هذا القسم (مع [DECISIONS](DECISIONS.md) وتاريخ git) هو **سجلّ التغييرات المعتمد** — لا حاجة لـ CHANGELOG منفصل.
 
 - [x] **التحوّل إلى OWUI-أساسي ([ADR-025](DECISIONS.md), 2026-06-26):** أُزيل محرّك السياق المخصّص من master (4 خدمات)، ومحفوظ على فرع `future/context-engine`. **مُتحقَّق حيّاً على الصورة المثبّتة:** ذاكرة OWUI (تخزين + استرجاع دلالي مسافة 0.83 + **حقن في ردّ Gemma**: "الفيروزي") · RAG مستندات (رفع + استخراج + تضمين Chroma + **استرجاع + استشهادات [1] في ردّ Gemma**: "ياقوت-أزرق-2026"). التضمين = all-MiniLM-384 محلّي خارج البوّابة. حساب الاختبار نُظّف بالكامل.
 - [x] إثبات جدوى محلي (Qwen3 / Gemma عبر llama.cpp).
@@ -74,7 +74,7 @@
 ## 6. أسئلة / عوائق مفتوحة
 > صيغة كل بند: `[OPEN] الوصف — مالكه — أثره`.
 
-- [RESOLVED] **تعارض اسم خدمة LiteLLM:** وُحّد حقل `service` على `litellm` في `ERROR_AND_OBSERVABILITY_POLICY` ليطابق `R-ARCH-31` واسم خدمة Docker (يدعم تتبّع `request_id` عبر الطبقات R-ERR-25).
+- [RESOLVED] **تعارض اسم خدمة LiteLLM:** وُحّد حقل `service` على `litellm` في `ERROR_AND_OBSERVABILITY_POLICY` ليطابق `R-ARCH-31` واسم خدمة Docker (يدعم تتبّع `request_id` عبر الطبقات R-ERR-19).
 - [RESOLVED] الـ backend الابتدائي = **موديل Gemma 4 المحلي** (قرار المالك، [ADR-010](DECISIONS.md))؛ managed تبديل سطر واحد لاحقاً.
 - [RESOLVED] تشغيل المحرّك = **Docker مع GPU** (قرار المالك، [ADR-011](DECISIONS.md)).
 - [RESOLVED] صورة `ghcr.io/ggml-org/llama.cpp:server-cuda` **تدعم gemma4** (master يومي، الدعم منذ إبريل 2026) — لا حاجة لصورة مخصّصة. شرط: تعريف NVIDIA لويندوز يدعم WSL2 GPU + Docker Desktop WSL2.
