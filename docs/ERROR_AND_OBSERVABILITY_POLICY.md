@@ -2,7 +2,7 @@
 
 > سياسة الأخطاء والرصد لمنصّة `llm-platform`. تُقرأ مع [CONSTITUTION](CONSTITUTION.md) · [ARCHITECTURE_RULES](ARCHITECTURE_RULES.md) · [DECISIONS](DECISIONS.md) · [PROGRESS_MAP](PROGRESS_MAP.md).
 >
-> **الحالة:** مسوّدة v1 · **Owner:** SRE · **النطاق (Phase 1):** المنصّة الفعلية — Gemma 4 محلي (llamacpp/GPU) خلف LiteLLM + Open WebUI (تملك RAG + Memory، [ADR-025](DECISIONS.md)) + postgres ([ADR-010](DECISIONS.md)/011، يستبدلان ADR-006).
+> **الحالة:** نافذة v1 (مُعتمدة ومُلزِمة) · **Owner:** SRE · **النطاق (Phase 1):** المنصّة الفعلية — Gemma 4 محلي (llamacpp/GPU) خلف LiteLLM + Open WebUI (تملك RAG + Memory، [ADR-025](DECISIONS.md)) + postgres ([ADR-010](DECISIONS.md)/011، يستبدلان ADR-006).
 
 العقيدة المركزية: **"الخطأ يبلّغ عن نفسه" (errors that announce themselves).** كل فشل يخبرنا فوراً: **ماذا حدث، في أي طلب، وكيف نصلحه**. الفشل صاخب وواضح، لا صامت ولا غامض.
 
