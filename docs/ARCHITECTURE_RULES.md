@@ -28,6 +28,8 @@
 │   │   └── litellm-config.yaml   # model_list + routing — نقطة التبديل الوحيدة
 │   ├── vllm/
 │   │   └── vllm-config.yaml      # إعداد المحرّك: الموديل + معاملات الذاكرة/السياق (ADR-028)
+│   ├── postgres/
+│   │   └── init/                 # تهيئة قاعدة/دور openwebui + امتداد vector على volume نظيف (ADR-029)
 │   └── env/
 │       └── .env.example          # قالب المتغيّرات (placeholders فقط)
 ├── docs/                    # كل وثائق الحوكمة (هذا الملف وإخوته)

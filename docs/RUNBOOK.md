@@ -12,7 +12,16 @@ cp config/env/.env.example config/env/.env
 docker compose --env-file config/env/.env -f compose/docker-compose.yml up -d
 docker compose --env-file config/env/.env -f compose/docker-compose.yml ps   # 4 خدمات (vllm يحتاج دقائق أوّل مرة)
 ```
-الواجهة: http://127.0.0.1:3000
+الواجهة: http://127.0.0.1:3000 — **على قاعدة نظيفة، أوّل حساب تنشئه عبر الواجهة يصير الأدمن** (bootstrap رغم `ENABLE_SIGNUP=false`).
+
+## تهيئة قاعدة postgres — أدوار least-privilege (ADR-029)
+النموذج: superuser ‏`postgres` **للإدارة فقط** (لا يتصل به تطبيق)؛ كل تطبيق بدور عادي يملك قاعدته فقط (`litellm`، `openwebui`) + ‏`REVOKE CONNECT FROM PUBLIC` (عزل صلب بين القاعدتين).
+- على **volume نظيف**: سكربت `config/postgres/init/10-app-roles.sh` يبني كل ذلك **تلقائياً** (مُثبَت حيّاً).
+- على **volume قائم** (init لا يعمل تلقائياً): نفّذ **نفس السكربت** يدوياً — idempotent وكلمات السرّ من بيئة الحاوية:
+```bash
+docker exec llm-platform-postgres-1 bash /docker-entrypoint-initdb.d/10-app-roles.sh
+```
+**للانتقال لـ Postgres خارجي/مُدار لاحقاً (ADR-029):** غيّر `host` في `DATABASE_URL`/`PGVECTOR_DB_URL` (compose/‏.env) لعنوان القاعدة المُدارة (غالباً مع `?sslmode=require`) — تغيير رابط فقط، بلا تغيير schema. للترحيل: `pg_dump` القاعدتين ثم استعادة على المُدارة.
 
 > ⏱️ **الإقلاع البارد لـ vLLM:** أوّل تشغيل = تنزيل الموديل (~2.5GB) + torch.compile (دقائق). الإقلاعات التالية أسرع بكثير (كاش `vllm-cache`). healthcheck يصبر (`start_period: 600s`) — راقب `logs vllm` لا تستعجل.
 
@@ -40,25 +49,28 @@ print(r.json()['key'])"
 | طلب يفشل 400 "maximum context length" | vLLM يرفض بدل القصّ عند prompt+max_tokens > النافذة — قصّر المحادثة أو اخفض `max_tokens` في الطلب (لا نضبط افتراضياً — ADR-028) |
 | تنزيل الموديل يفشل 401/403 | موديل مقفل (gated) على HF — اقبل الترخيص على huggingface.co وضع `HF_TOKEN` في `.env` (غير مطلوب لـ Qwen3-4B-AWQ) |
 | `litellm` unhealthy | مفاتيح `.env` (master/salt)؛ صحّة `litellm-config.yaml`؛ `logs litellm` |
+| OWUI لا يقلع / خطأ اتصال قاعدة | تأكّد قاعدة/دور `openwebui` موجودان (قسم التهيئة أعلاه) و`OPENWEBUI_DB_PASSWORD` مضبوط؛ `logs open-webui` |
 | الدردشة 5xx | راجع `ps` + `logs` للخدمة المعنيّة؛ تتبّع `request_id` عبر الطبقات (R-ERR-19) |
 | رفع صورة في الدردشة → خطأ/تجاهل | متوقَّع: الرؤية معلّقة مؤقتاً (موديل الاختبار نصّي — [ADR-028](DECISIONS.md))؛ تعود بتبديل الموديل مع GPU أكبر |
 | ذاكرة/RAG لا تسترجع في OWUI | `ENABLE_MEMORIES=true`؛ أوّل استخدام RAG يُنزّل موديل التضمين المحلّي؛ راجع أدناه |
 
 ## تدفّق البيانات في OWUI (RAG + Memory)
-- **ملفات (RAG):** رفع → OWUI يستخرج النص → تقطيع (1000/100) → تضمين **all-MiniLM-L6-v2 (384) محلّياً داخل OWUI** → Chroma → استرجاع top-k (3) → حقن المقاطع + استشهادات في الدردشة.
+- **ملفات (RAG):** رفع → OWUI يستخرج النص → تقطيع (1000/100) → تضمين **all-MiniLM-L6-v2 (384) محلّياً داخل OWUI** → **pgvector** (قاعدة `openwebui` — [ADR-029](DECISIONS.md)، كان Chroma) → استرجاع top-k (3) → حقن المقاطع + استشهادات في الدردشة.
 - **حقائق (Memory):** `Settings > Personalization > Memory` → مجموعة per-user `user-memory-{id}` (بحث دلالي) → حقن كـ"User Context:".
 - **⚠️ استثناء حوكمي ([ADR-025](DECISIONS.md)):** تضمين OWUI **محلّي خارج البوّابة** (ليس عبر LiteLLM) — انحراف موثّق ومقصود عن قاعدة "كل مرور موديل عبر البوّابة" (R-ARCH-10)، قابل للعكس بالإعداد.
 - **ℹ️ الرؤية (الصور) معلّقة مؤقتاً ([ADR-028](DECISIONS.md)):** لا موديل multimodal يتّسع على 6GB تحت vLLM — تعود مع GPU أكبر بتبديل الموديل (بلا mmproj؛ برج الرؤية داخل checkpoint HF). وسوم `<think>` من Qwen3 تصل inline وOWUI يطويها (لا `--reasoning-parser` — علّة عرض مفتوحة open-webui#24697).
 
 ## نسخ احتياطي واستعادة (طبقة البيانات — حيث كل القيمة)
-`openwebui-data` يحوي **كل** ذاكرة المستخدمين + RAG/Chroma؛ `postgres-data` يحوي حالة LiteLLM (مفاتيح/كلفة). **فقدان `LITELLM_SALT_KEY` غير قابل للاستعادة** (R-ARCH-44) — احفظ `.env` بأمان خارج git. *(`hf-cache`/`vllm-cache` قابلان لإعادة الإنشاء — لا يحتاجان نسخاً.)*
+بعد [ADR-029](DECISIONS.md): **بيانات OWUI (ميتاداتا + متجهات) صارت في `postgres`** (قاعدة `openwebui`)، لا في SQLite/Chroma. فالنسخة الأساسية = **`pg_dump` للقاعدتين** (`litellm` + `openwebui`). يبقى `openwebui-data` يحوي **ملفّات الرفع (blobs)** فقط (لا الميتاداتا/المتجهات). **فقدان `LITELLM_SALT_KEY` غير قابل للاستعادة** (R-ARCH-44) — احفظ `.env` بأمان خارج git. *(`hf-cache`/`vllm-cache` قابلان لإعادة الإنشاء.)*
 ```bash
-mkdir -p backups   # للاتساق التامّ أوقف الستاك أولاً (down بلا -v)
+mkdir -p backups
+# القاعدتان (منطقيّاً، بلا إيقاف) — بحساب الإدارة postgres (الوحيد العابر للقاعدتين، ADR-029)
+docker exec llm-platform-postgres-1 pg_dump -U postgres -d litellm   | gzip > backups/litellm-$(date +%F).sql.gz
+docker exec llm-platform-postgres-1 pg_dump -U postgres -d openwebui | gzip > backups/openwebui-$(date +%F).sql.gz
+# ملفّات الرفع (blobs على الـ volume)
 docker run --rm -v llm-platform_openwebui-data:/d -v "$PWD/backups":/b alpine \
-  tar czf /b/owui-$(date +%F).tgz -C /d .
-docker run --rm -v llm-platform_postgres-data:/d -v "$PWD/backups":/b alpine \
-  tar czf /b/pg-$(date +%F).tgz -C /d .
-# استعادة (الستاك متوقّف): استبدل "tar czf … ." بـ "tar xzf /b/<ملف> ." على الـ volume نفسه.
+  tar czf /b/owui-uploads-$(date +%F).tgz -C /d uploads
+# استعادة قاعدة (الستاك متوقّف أو الخدمة مُعادة): zcat backups/openwebui-<تاريخ>.sql.gz | docker exec -i llm-platform-postgres-1 psql -U postgres -d openwebui
 ```
 
 ## اختبار دخان (smoke) يدوي — مسار الدردشة + request_id

@@ -12,14 +12,14 @@
 
 ```text
 open-webui ──/v1──▶ litellm ──/v1──▶ vllm (Qwen3 4B، GPU) ──▶ HF model
- (الواجهة +        (البوّابة)         └──▶ postgres (pgvector: حالة litellm)
-  RAG + Memory)
+ (الواجهة +        (البوّابة)         └──▶ postgres + pgvector
+  RAG + Memory)                          (حالة litellm + تخزين OWUI: قاعدتان معزولتان — ADR-029)
 ```
 
 كل تخاطب موديل عبر العقد `OpenAI /v1` والبوّابة. تبديل المحرّك/المزوّد = سطر واحد في `config/litellm/litellm-config.yaml`؛ تبديل موديل vLLM = سطران في `config/vllm/vllm-config.yaml` (التنزيل تلقائي من HuggingFace — [ADR-028](docs/DECISIONS.md)). اسم الموديل المعروض = **Qwen3 4B** (تسمية صادقة)؛ و**Sankari Chat** = اسم الواجهة (`WEBUI_NAME`) لا الموديل ([ADR-017](docs/DECISIONS.md)). البوّابة والمحرّك وpostgres **غير مكشوفة** (R-ARCH-24)؛ المنفذ العام الوحيد = الواجهة.
 
 ## 🧠 الذاكرة والملفات (Open WebUI المدمج)
-بعد [ADR-025](docs/DECISIONS.md)، تتولّى Open WebUI طبقة البيانات: **RAG للمستندات** (تقطيع + استرجاع top-k + استشهادات + استخراج متعدّد الصيغ) و**ذاكرة per-user** (`Settings > Personalization > Memory`، `ENABLE_MEMORIES=true`). محرّك السياق المخصّص (تضمين عبر البوّابة + استرجاع hybrid + التقاط محادثة تلقائي عابر للجلسات) محفوظ على فرع `future/context-engine` لتطوير مستقبلي.
+بعد [ADR-025](docs/DECISIONS.md)، تتولّى Open WebUI طبقة البيانات: **RAG للمستندات** (تقطيع + استرجاع top-k + استشهادات + استخراج متعدّد الصيغ) و**ذاكرة per-user** (`Settings > Personalization > Memory`، `ENABLE_MEMORIES=true`). التخزين على **PostgreSQL + pgvector** (قاعدة `openwebui` معزولة، بدل SQLite/Chroma — [ADR-029](docs/DECISIONS.md)، أساس دائم؛ الموقع قابل للانتقال لخارجي/مُدار بتغيير رابط). محرّك السياق المخصّص (تضمين عبر البوّابة + استرجاع hybrid + التقاط محادثة تلقائي عابر للجلسات) محفوظ على فرع `future/context-engine` لتطوير مستقبلي.
 
 ## 🗺️ خريطة الحوكمة
 
@@ -31,7 +31,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ vllm (Qwen3 4B، GPU) �
 | [docs/CONSTITUTION.md](docs/CONSTITUTION.md) | الدستور الأعلى: الفلسفة، القوانين، معيار "تمّ"، آلية العمل |
 | [docs/ARCHITECTURE_RULES.md](docs/ARCHITECTURE_RULES.md) | المجلدات، الطبقات، الاستيراد، التسمية، config-driven |
 | [docs/ERROR_AND_OBSERVABILITY_POLICY.md](docs/ERROR_AND_OBSERVABILITY_POLICY.md) | عقيدة "الخطأ يبلّغ عن نفسه" + الرصد |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | سجل القرارات المعمارية (ADR-001..028) |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | سجل القرارات المعمارية (ADR-001..029) |
 | [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) | خريطة التتبّع الحيّة — نقطة الاستئناف |
 | [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md) | المخطّط الهندسي الكامل (الرؤية + الخلفية) |
 | **مرجع / متقاعد** | [docs/specs/CONTEXT_ENGINE_V1.md](docs/specs/CONTEXT_ENGINE_V1.md) + [research/](research/) (CONTEXT_ENGINE_RATIONALE · MEMORY_LANDSCAPE · VISION_SETUP) — مواصفة محرّك السياق المتقاعد + الأبحاث الداعمة ([ADR-025](docs/DECISIONS.md)) |

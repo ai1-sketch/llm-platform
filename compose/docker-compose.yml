@@ -51,7 +51,7 @@ services:
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY مفقود}   # fail-fast (R-ERR-02)
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?LITELLM_SALT_KEY مفقود}
-      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}@postgres:5432/litellm
+      DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD:?LITELLM_DB_PASSWORD مفقود}@postgres:5432/litellm   # دور عادي يملك قاعدته فقط — لا superuser للتطبيقات (ADR-029)
       VLLM_API_KEY: ${VLLM_API_KEY:?VLLM_API_KEY مفقود}              # يطابق مفتاح المحرّك (ADR-028)
       LITELLM_LOG: ${LITELLM_LOG:-INFO}                              # مستوى السجل (R-ERR-17)
     volumes:
@@ -72,10 +72,17 @@ services:
     depends_on:
       litellm:
         condition: service_healthy
+      postgres:
+        condition: service_healthy            # OWUI صار يخزّن على postgres مباشرةً (ADR-029)
     environment:
       OPENAI_API_BASE_URL: http://litellm:4000/v1            # تكلّم البوّابة فقط (R-ARCH-10)
       OPENAI_API_KEY: ${OPENWEBUI_LITELLM_KEY:?OPENWEBUI_LITELLM_KEY مفقود}   # virtual key من litellm
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY مفقود}
+      # ── تخزين OWUI على PostgreSQL + pgvector (بدل SQLite + Chroma — ADR-029، قرار أساسي دائم) ──
+      # الرابط config-driven: محلي الآن؛ للانتقال لـ Postgres خارجي/مُدار (RDS/Azure/Cloud SQL) غيّر المضيف في .env فقط (ADR-029)
+      DATABASE_URL: postgresql://openwebui:${OPENWEBUI_DB_PASSWORD:?OPENWEBUI_DB_PASSWORD مفقود}@postgres:5432/openwebui   # ميتاداتا OWUI (مستخدمون/محادثات/معرفة/صلاحيات)
+      VECTOR_DB: pgvector                                    # متجهات OWUI (RAG + ذاكرة) على pgvector بدل Chroma
+      PGVECTOR_DB_URL: postgresql://openwebui:${OPENWEBUI_DB_PASSWORD:?OPENWEBUI_DB_PASSWORD مفقود}@postgres:5432/openwebui   # قاعدة المتجهات (نفس قاعدة OWUI، صريح لتفادي أي fallback)
       GLOBAL_LOG_LEVEL: ${WEBUI_LOG_LEVEL:-INFO}              # مستوى السجل (R-ERR-17)
       WEBUI_NAME: ${WEBUI_NAME:-Sankari Chat}                 # اسم التطبيق/الواجهة المعروض (علامة، ليس اسم الموديل — ADR-017)
       ENABLE_EVALUATION_ARENA_MODELS: "false"                # نُطفئ موديل Arena الافتراضي (يظهر فقط ما تعرّفه البوّابة — حالياً Qwen3 4B)
@@ -94,18 +101,22 @@ services:
       retries: 5
       start_period: 40s
 
-  postgres:                                  # حالة litellm (مفاتيح/كلفة) — يبقى بسجله الافتراضي (استثناء موثّق لـ R-ERR-14؛ ليس مسار طلبات)
-    image: pgvector/pgvector@sha256:131dcf7ff6a900545df8e7e092c270aa8c6db2f2c818e408cb45ec21316b74e6   # pgvector/pgvector:pg16 (PG16 + pgvector) مُثبَّت بـ digest (2026-06-25، ADR-020؛ بدّل postgres:16-alpine)
+  postgres:                                  # قاعدة المنصّة: حالة litellm (مفاتيح/كلفة) + تخزين OWUI (ميتاداتا + متجهات pgvector، ADR-029). قاعدتان معزولتان بدورَين. سجلّها افتراضي (استثناء موثّق R-ERR-14؛ ليس مسار طلبات)
+    image: pgvector/pgvector@sha256:131dcf7ff6a900545df8e7e092c270aa8c6db2f2c818e408cb45ec21316b74e6   # pgvector/pgvector:pg16 (PG16 + pgvector) مُثبَّت بـ digest (2026-06-25، ADR-020؛ صار له استخدام فعلي للمتجهات بعد ADR-029)
     restart: unless-stopped
     environment:
-      POSTGRES_USER: litellm
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}
-      POSTGRES_DB: litellm
+      # least-privilege (ADR-029): superuser `postgres` للإدارة فقط — لا يتصل به أي تطبيق؛
+      # كل تطبيق بدور عادي يملك قاعدته فقط (ينشئها init أدناه)، وRLS المستقبلي لا يتجاوزه أحد
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}                    # سرّ الإدارة (superuser) — لا يظهر في أي DATABASE_URL تطبيقي
+      LITELLM_DB_PASSWORD: ${LITELLM_DB_PASSWORD:?LITELLM_DB_PASSWORD مفقود}              # يُستهلك في init لإنشاء دور litellm العادي
+      OPENWEBUI_DB_PASSWORD: ${OPENWEBUI_DB_PASSWORD:?OPENWEBUI_DB_PASSWORD مفقود}        # يُستهلك في init لإنشاء دور openwebui العادي
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ../config/postgres/init:/docker-entrypoint-initdb.d:ro   # أدوار/قواعد التطبيقات + REVOKE عزل + امتداد vector — تلقائي على volume نظيف (ADR-029؛ على قائم: RUNBOOK)
     networks: [internal]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
