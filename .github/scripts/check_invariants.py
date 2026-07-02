@@ -14,7 +14,7 @@ import sys
 import yaml
 
 COMPOSE = pathlib.Path(__file__).resolve().parents[2] / "compose" / "docker-compose.yml"
-ALLOWED = {"open-webui", "litellm", "llamacpp", "postgres"}  # R-ARCH-31
+ALLOWED = {"open-webui", "litellm", "vllm", "postgres"}  # R-ARCH-31 (المحرّك vllm منذ ADR-028)
 PUBLIC = "open-webui"  # الخدمة الوحيدة المسموح لها بكشف منفذ (R-ARCH-24)
 
 

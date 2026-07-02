@@ -1,22 +1,29 @@
-# llm-platform — P-01 stack (ADR-005/010/011، ADR-025). 4 خدمات: open-webui → litellm → llamacpp (Gemma 4، GPU) + postgres.
+# llm-platform — P-01 stack (ADR-005/010/011، ADR-025، ADR-028). 4 خدمات: open-webui → litellm → vllm (Qwen3 4B، GPU) + postgres.
 # الذاكرة/RAG عبر ميزات OWUI المدمجة (RAG + Personalization Memory، ADR-025). محرّك السياق المخصّص متقاعد إلى فرع future/context-engine.
 # التشغيل (من جذر المستودع):
 #   cp config/env/.env.example config/env/.env   # ثم املأ القيم
 #   docker compose --env-file config/env/.env -f compose/docker-compose.yml up -d
 # شرط مسبق: Docker Desktop (WSL2 backend) + تعريف NVIDIA لويندوز يدعم WSL2 GPU.
-#   تحقّق أوّلاً: docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi
-# قواعد: litellm/llamacpp غير مكشوفة (R-ARCH-24) · أسرار من env (R-ARCH-20) · أسماء حياديّة (R-ARCH-31).
+#   تحقّق أوّلاً (الصورة CUDA 13 كصورة vllm — يفحص كفاية التعريف R580+): docker run --rm --gpus all nvidia/cuda:13.0.2-base-ubuntu22.04 nvidia-smi
+# قواعد: litellm/vllm غير مكشوفة (R-ARCH-24) · أسرار من env (R-ARCH-20) · أسماء صادقة الدور (R-ARCH-31).
 # ✓ الصور مثبّتة بـ digest (إعادة الإنتاج). للترقية: حدّث الـ digest يدوياً بعد سحب الوسم + اختبار.
 name: llm-platform
 
 services:
-  llamacpp:                                  # llama-swap يبدّل موديلات llama.cpp عند الطلب على GPU واحد (ADR-027). الاسم يبقى `llamacpp` (R-ARCH-31).
-    image: ghcr.io/mostlygeek/llama-swap@sha256:4bf68364fffc2aee43791cd8a897d39d6d0e671b99b58ef6eb153c7e7f8e9b07   # llama-swap + llama-server CUDA (unified-cuda، مُثبَّت بـ digest 2026-06-29، ADR-027)
+  vllm:                                      # المحرّك (R-ARCH-31، ADR-028) — vLLM يخدم موديلاً واحداً مقيماً في الـ VRAM (يستبدل llama-swap/ADR-027)
+    image: vllm/vllm-openai:v0.24.0@sha256:251eba5cc7c12fed0b75da22a9240e582b1c9e39f6fbc064f86781b963bd814f   # مُثبَّت بـ digest (2026-07-02، ADR-028). الصورة CUDA 13 → تعريف NVIDIA R580+ على المضيف
     restart: unless-stopped
+    shm_size: "2gb"                          # PyTorch يحتاج /dev/shm أكبر؛ البديل الرسمي الأكثر عزلاً عن ipc:host (يكفي لـ GPU واحد بلا tensor-parallel)
     volumes:
-      - "${MODEL_DIR:-../models-gemma4}:/models:ro"                 # مجلّد GGUF على المضيف
-      - ../config/llama-swap/llama-swap.yaml:/app/config.yaml:ro    # إعداد التبديل (Gemma 4 E2B + 4B)
-    command: ["--config", "/app/config.yaml", "--listen", "0.0.0.0:8080"]
+      - hf-cache:/root/.cache/huggingface    # كاش أوزان HuggingFace — الموديل يُنزَّل تلقائياً أوّل تشغيل (لا خطوة يدوية، DoD §3)
+      - vllm-cache:/root/.cache/vllm         # كاش torch.compile — يخفض الإقلاع الدافئ من دقائق إلى أقل من دقيقة
+      - ../config/vllm/vllm-config.yaml:/app/config.yaml:ro   # الموديل + معاملات الذاكرة/السياق (config-driven، R-LAW-03)
+    command: ["--config", "/app/config.yaml"]   # ENTRYPOINT للصورة = `vllm serve`
+    environment:
+      VLLM_API_KEY: ${VLLM_API_KEY:?VLLM_API_KEY مفقود}   # مصادقة /v1 داخلية؛ يطابق api_key في litellm-config (fail-fast — R-ERR-02)
+      HF_TOKEN: ${HF_TOKEN:-}                              # فقط للموديلات المقفلة على HF (فارغ مقبول — Qwen3-4B-AWQ غير مقفل)
+      VLLM_USE_V2_MODEL_RUNNER: ${VLLM_USE_V2_MODEL_RUNNER:-0}   # ‏0 على WSL2: ‏Model Runner V2 يتطلّب UVA غير المتاحة تحته (مُتحقَّق حيّاً — ADR-028)؛ على Linux أصلي/سحابة اضبط 1 في .env
+      VLLM_LOGGING_LEVEL: ${VLLM_LOG_LEVEL:-INFO}                # مستوى السجل (R-ERR-17). سجلّ vllm نصّي افتراضي — استثناء موثّق لـ R-ERR-14 (الرصد الحرج request_id/كلفة عند البوّابة)
     deploy:
       resources:
         reservations:
@@ -25,7 +32,13 @@ services:
               count: 1
               capabilities: [gpu]
     networks: [internal]
-    # لا healthcheck (litellm: service_started). llama-swap يحمّل الموديل عند أوّل طلب (lazy)، ويبدّل في الـ VRAM.
+    healthcheck:
+      # /health بلا مصادقة (سلوك vLLM الموثّق) وcurl موجود في الصورة. أوّل إقلاع بارد = تنزيل الموديل + torch.compile (دقائق) → start_period طويل
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 600s
 
   litellm:                                   # البوّابة (R-ARCH-31)
     image: ghcr.io/berriai/litellm@sha256:8f3517476b8293ccc1c3b0da7940d8dabbfe64b013454113f5a3cb68265c439b   # main-stable مُثبَّت بـ digest (2026-06-25)
@@ -33,13 +46,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      llamacpp:
-        condition: service_started            # يبدأ مع إقلاع المحرّك؛ retry يغطّي زمن تحميل الموديل
+      vllm:
+        condition: service_started            # لا ننتظر جاهزية المحرّك (إقلاعه البارد دقائق)؛ طلبات ما قبل الجاهزية تفشل بوضوح حتى يصبح healthy
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY مفقود}   # fail-fast (R-ERR-02)
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?LITELLM_SALT_KEY مفقود}
       DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}@postgres:5432/litellm
-      LLAMACPP_API_KEY: ${LLAMACPP_API_KEY:?LLAMACPP_API_KEY مفقود}   # يطابق --api-key للمحرّك
+      VLLM_API_KEY: ${VLLM_API_KEY:?VLLM_API_KEY مفقود}              # يطابق مفتاح المحرّك (ADR-028)
       LITELLM_LOG: ${LITELLM_LOG:-INFO}                              # مستوى السجل (R-ERR-17)
     volumes:
       - ../config/litellm/litellm-config.yaml:/app/config.yaml:ro
@@ -65,7 +78,7 @@ services:
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY مفقود}
       GLOBAL_LOG_LEVEL: ${WEBUI_LOG_LEVEL:-INFO}              # مستوى السجل (R-ERR-17)
       WEBUI_NAME: ${WEBUI_NAME:-Sankari Chat}                 # اسم التطبيق/الواجهة المعروض (علامة، ليس اسم الموديل — ADR-017)
-      ENABLE_EVALUATION_ARENA_MODELS: "false"                # نُطفئ موديل Arena الافتراضي (نريد موديلاً واحداً يظهر — Gemma 4)
+      ENABLE_EVALUATION_ARENA_MODELS: "false"                # نُطفئ موديل Arena الافتراضي (يظهر فقط ما تعرّفه البوّابة — حالياً Qwen3 4B)
       ENABLE_MEMORIES: "true"                                # ميزة الذاكرة per-user المدمجة (سطح الحقائق الفعّال — ADR-025)
       ENABLE_SIGNUP: "false"                                 # لا تسجيل ذاتي مفتوح (تقوية أمنية صريحة — SECURITY/ADR-026؛ لا نترك الافتراضي)
     volumes:
@@ -104,3 +117,5 @@ networks:
 volumes:
   openwebui-data:
   postgres-data:
+  hf-cache:        # أوزان الموديلات من HuggingFace (قابل لإعادة الإنشاء — لا يحتاج نسخاً احتياطياً)
+  vllm-cache:      # كاش torch.compile لـ vLLM (قابل لإعادة الإنشاء)

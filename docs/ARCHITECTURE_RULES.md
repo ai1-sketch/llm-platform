@@ -22,10 +22,12 @@
 ├── .gitignore
 ├── .github/workflows/ci.yml # بوّابة CI (ruff + gitleaks + تحقّق compose)
 ├── compose/
-│   └── docker-compose.yml   # تعريف الخدمات الأربع (open-webui, litellm, llamacpp, postgres) — ADR-025
+│   └── docker-compose.yml   # تعريف الخدمات الأربع (open-webui, litellm, vllm, postgres) — ADR-025/028
 ├── config/                  # كل الإعداد الخارجي (لا أسرار قيمية)
 │   ├── litellm/
 │   │   └── litellm-config.yaml   # model_list + routing — نقطة التبديل الوحيدة
+│   ├── vllm/
+│   │   └── vllm-config.yaml      # إعداد المحرّك: الموديل + معاملات الذاكرة/السياق (ADR-028)
 │   └── env/
 │       └── .env.example          # قالب المتغيّرات (placeholders فقط)
 ├── docs/                    # كل وثائق الحوكمة (هذا الملف وإخوته)
@@ -34,7 +36,7 @@
 │   └── specs/CONTEXT_ENGINE_V1.md   # مواصفة محرّك السياق المتقاعد (مرجع، ADR-025)
 ├── research/               # أبحاث داعمة (CONTEXT_ENGINE_RATIONALE, MEMORY_LANDSCAPE, VISION_SETUP) — معفاة من حدّ 180 سطر
 ├── legacy/                 # النموذج الأولي المؤرشَف (Qwen3/Gemma، غير مُشغَّل، خارج البوّابة)
-└── models-gemma4/          # GGUF + mmproj (git-ignored، كبيرة)
+└── models-gemma4/          # بقايا GGUF من عهد llama.cpp (git-ignored؛ لم تعد تُستخدم بعد ADR-028 — حذفها قرار مالك)
 ```
 
 > **قرار هيكلي ([ADR-018](DECISIONS.md)):** المنصّة في **جذر المستودع** (رُقِّيت من `llm-platform/`)، والنموذج الأولي القديم مؤرشَف في `legacy/` (متتبَّع، خارج البوّابة). هذا الجدول يعكس الحالة الفعلية المعتمدة.
@@ -54,15 +56,15 @@
 تدفّق وحيد الاتجاه: `Frontend → Gateway → Engine → Model`. لا قفز للطبقات ولا اعتماد عكسي.
 
 ```text
-open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لاحقاً) ──▶ GGUF model
+open-webui ──/v1──▶ litellm ──/v1──▶ vllm (llama.cpp سابقاً — ADR-028) ──▶ HF model
  (frontend)         (gateway)         (engine)
 ```
 
-- **R-ARCH-10** — **العميل لا يعرف المحرّك.** أي frontend / app / agent / script يتّصل **حصراً** بعنوان البوّابة (`http://litellm:4000/v1`). فحص: `api_base`/`base_url` في أي عميل = منفذ البوّابة فقط، لا منفذ المحرّك (`llamacpp:8080`). **يشمل ذلك التضمين** (القاعدة تبقى سارية لأي عميل/تكامل). مثال محرّك السياق (`memory`→`embed-default` عبر البوّابة، [ADR-023](DECISIONS.md)) متقاعد إلى فرع `future/context-engine` ([ADR-025](DECISIONS.md)).
+- **R-ARCH-10** — **العميل لا يعرف المحرّك.** أي frontend / app / agent / script يتّصل **حصراً** بعنوان البوّابة (`http://litellm:4000/v1`). فحص: `api_base`/`base_url` في أي عميل = منفذ البوّابة فقط، لا منفذ المحرّك (`vllm:8000`). **يشمل ذلك التضمين** (القاعدة تبقى سارية لأي عميل/تكامل). مثال محرّك السياق (`memory`→`embed-default` عبر البوّابة، [ADR-023](DECISIONS.md)) متقاعد إلى فرع `future/context-engine` ([ADR-025](DECISIONS.md)).
 - **R-ARCH-11** — الاتصال **وحيد الاتجاه نزولاً** فقط. ممنوع أن يستدعي المحرّك البوّابة، أو تستدعي البوّابة الواجهة. فحص: مراجعة `depends_on` وعناوين URL في `docker-compose.yml`.
 - **R-ARCH-12** — **ممنوع تجاوز طبقة** (layer skipping): الواجهة لا تكلّم المحرّك مباشرةً. كل عبور يمرّ بالطبقة المجاورة عبر عقدها.
 - **R-ARCH-13** — **العقد بين الطبقات هو `OpenAI-compatible API` حصراً** (`/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, `/v1/models`). أي تكامل لا يتكلّم هذا العقد يُرفض (تجسيد ADR-001).
-- **R-ARCH-14** — استبدال أي طبقة (`open-webui`↔بديل، `llamacpp`↔vLLM، محلي↔managed) يجب أن **لا يلمس الطبقات الأخرى**. فحص ميكانيكي: تبديل المحرّك = diff يلمس `config/litellm/litellm-config.yaml` فقط (ولا ملف آخر).
+- **R-ARCH-14** — استبدال أي طبقة (`open-webui`↔بديل، `vllm`↔بديل (llama.cpp/SGLang)، محلي↔managed) يجب أن **لا يلمس الطبقات الأخرى**. فحص ميكانيكي: تبديل المزوّد/الوجهة خلف البوّابة = diff يلمس `config/litellm/litellm-config.yaml` فقط؛ استبدال المحرّك نفسه (صورة/خدمة) يلمس compose + config المحرّك ويستلزم ADR (كما ADR-027/028) — دون مساس بالواجهة أو عقد `/v1`.
 
 ---
 
@@ -79,9 +81,9 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
 ## 4. اصطلاحات التسمية (Naming)
 
 - **R-ARCH-30** — **الملفات والمجلدات:** `kebab-case` (مثل `litellm-config.yaml`). الاستثناء الوحيد: الوثائق بصيغة `SCREAMING_SNAKE_CASE.md`.
-- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `llamacpp`, `postgres` (4 خدمات بعد [ADR-025](DECISIONS.md)؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine`). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة (مُحقَّق: الـ compose الفعلي يلتزم). **مُحلّ:** مقاطع PROJECT_BLUEPRINT §10.2 تستخدم أسماء توضيحية (`engine/gateway/webui/db`)، وقد وُسِمت صراحةً كأمثلة إيضاحية مع الإشارة للأسماء المعتمدة ومصدر الحقيقة (`compose/docker-compose.yml`) — فلا تناقض فعليّاً مع القاعدة.
+- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `vllm`, `postgres` (4 خدمات؛ المحرّك `vllm` منذ [ADR-028](DECISIONS.md) بعدما كان `llamacpp` — الاسم يتبع المحرّك الفعلي بصدق؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine` بعد [ADR-025](DECISIONS.md)). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة (مفروض آلياً في CI — `check_invariants.py`). **مُحلّ:** مقاطع PROJECT_BLUEPRINT §10.2 تستخدم أسماء توضيحية (`engine/gateway/webui/db`)، وقد وُسِمت صراحةً كأمثلة إيضاحية مع الإشارة للأسماء المعتمدة ومصدر الحقيقة (`compose/docker-compose.yml`) — فلا تناقض فعليّاً مع القاعدة.
 - **R-ARCH-32** — **متغيّرات البيئة:** `SCREAMING_SNAKE_CASE` ببادئة المكوّن: `LITELLM_*`, `WEBUI_*`, `DATABASE_URL`. تتطابق حرفياً مع `config/env/.env.example`.
-- **R-ARCH-33** — **أسماء الموديلات في `model_list`:** `model_name` لصيقة عرض/منتج يختارها المالك (قد تكون اسم الموديل الفعلي مثل `Gemma 4`، أو اسماً منطقياً مثل `local-chat`) — [ADR-017](DECISIONS.md). **حياديّة التبديل تُصان على مستوى الكود/العقد** (العميل يستهدف `api_base` للبوّابة بلا كود خاص بمحرّك — R-ARCH-10/14)، لا على مستوى اللصيقة؛ فإن ذكرت اللصيقة الموديل تُحدَّث عند التبديل (سطر واحد). فحص: لا كود عميل يربط بمحرّك بعينه.
+- **R-ARCH-33** — **أسماء الموديلات في `model_list`:** `model_name` لصيقة عرض/منتج يختارها المالك (قد تكون اسم الموديل الفعلي مثل `Qwen3 4B`، أو اسماً منطقياً مثل `local-chat`) — [ADR-017](DECISIONS.md). **حياديّة التبديل تُصان على مستوى الكود/العقد** (العميل يستهدف `api_base` للبوّابة بلا كود خاص بمحرّك — R-ARCH-10/14)، لا على مستوى اللصيقة؛ فإن ذكرت اللصيقة الموديل تُحدَّث عند التبديل (سطر واحد). فحص: لا كود عميل يربط بمحرّك بعينه.
 - **R-ARCH-34** — حقل `service` في كل log/خطأ (R-ERR-05) **يطابق حرفياً اسم خدمة Docker** المعتمدة في R-ARCH-31 (`litellm`، لا `litellm-gateway`)؛ كي يعمل تتبّع `request_id` عبر الطبقات بـ grep واحد (R-ERR-19).
 
 ---
@@ -93,7 +95,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
 - **R-ARCH-42** — **`.env.example` فقط** مُتتبَّع في git، يحوي **كل** المفاتيح المطلوبة بقيم placeholder. `.env` الفعلي git-ignored بصلاحيات مقيّدة (`600`). فحص: تطابق مفاتيح `.env.example` مع كل مراجع `${...}` في الإعداد.
 - **R-ARCH-43** — الأسرار في Phase 1 من `.env` فقط، عبر حقن بيئة قياسي بلا منطق قراءة خاص بمزوّد داخل التطبيق. مسار الترقية لمدير أسرار يُقرّر بـ ADR لاحق.
 - **R-ARCH-44** — `LITELLM_SALT_KEY` يُضبط منذ اليوم الأول ولا يُغيّر بعد تخزين بيانات اعتماد (تغييره يعطّل فكّ التشفير). يُوثّق هذا القيد بجوار تعريفه في `.env.example`.
-- **R-ARCH-45** — تبديل المحرّك أو المزوّد = تعديل **سطر `api_base` واحد** في `config/litellm/litellm-config.yaml`، دون لمس أي كود عميل. فحص (R-ARCH-14): الـ PR diff لا يلمس سوى هذا الملف.
+- **R-ARCH-45** — تبديل **المزوّد/الوجهة خلف البوّابة** (محلي↔managed، موديل↔موديل عبر نفس المحرّك) = تعديل `config/litellm/litellm-config.yaml` (و/أو config المحرّك) **فقط**، دون لمس أي كود عميل أو طبقة أخرى. أمّا **استبدال المحرّك نفسه** (صورة/خدمة) فيلمس compose + config المحرّك ويستلزم ADR — كما R-ARCH-14 وسابقتا ADR-027/028. فحص: الـ PR diff لا يلمس كود عميل/واجهة في الحالتين.
 
 ---
 
@@ -107,4 +109,4 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (→ vLLM لا
 - [ ] فقط `open-webui` مكشوفة؛ البوّابة غير مكشوفة للإنترنت العام؟ (R-ARCH-24)
 - [ ] أسماء الخدمات حياديّة وحقل `service` يطابقها؟ (R-ARCH-31/34)
 - [ ] كل متغيّر بيئي في `.env.example`، ولا hardcoding؟ (R-ARCH-40/42)
-- [ ] تبديل المحرّك = diff يلمس `litellm-config.yaml` فقط؟ (R-ARCH-14/45)
+- [ ] تبديل المزوّد/الوجهة = diff في config فقط (بلا كود عميل)؛ واستبدال المحرّك = ADR + compose/config المحرّك فقط؟ (R-ARCH-14/45)

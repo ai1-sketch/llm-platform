@@ -1,8 +1,8 @@
 # منصّة خدمة النماذج اللغوية (LLM) الداخلية للشركة
 
-> ⚠️ **تحديث الحالة ([ADR-025](docs/DECISIONS.md), 2026-06-26) — اقرأ أولاً:** هذه الوثيقة الأساسية كُتبت قبل التحوّل، وبعض تأطيرها قديم. الحقائق الحالية:
+> ⚠️ **تحديث الحالة ([ADR-025](docs/DECISIONS.md), 2026-06-26 · [ADR-028](docs/DECISIONS.md), 2026-07-02) — اقرأ أولاً:** هذه الوثيقة الأساسية كُتبت قبل التحوّلات، وبعض تأطيرها قديم. الحقائق الحالية:
 > - **المسار الأساسي = OWUI المدمج (RAG + Memory) كطبقة بيانات** — أي تأطير هنا يصنّف RAG/الذاكرة كـ"لاحقاً" **متجاوَز**؛ هما فعّالان اليوم.
-> - **الستاك الحالي = 4 خدمات** (open-webui · litellm · llamacpp/Gemma 4 · postgres). محرّك سياق مخصّص + خدمة embeddings بُنيا ثم **تقاعدا إلى فرع `future/context-engine`**.
+> - **الستاك الحالي = 4 خدمات** (open-webui · litellm · vllm/Qwen3 4B · postgres). **المحرّك = vLLM منذ ADR-028** (llama.cpp سابقاً) — أي تأطير هنا يصنّف vLLM كـ"لاحقاً في السحابة" **متجاوَز**؛ هو محرّك اليوم، والانتقال للسحابة = نفس المحرّك على GPU أكبر. محرّك سياق مخصّص + خدمة embeddings بُنيا ثم **تقاعدا إلى فرع `future/context-engine`**.
 > - تضمين OWUI محلّي (all-MiniLM-384) **خارج البوّابة** — استثناء موثّق لمبدأ "كل شيء عبر البوّابة" (مُسجَّل في ADR-025).
 > - **مصدر الحقيقة للحالة الجارية:** [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) و[docs/DECISIONS.md](docs/DECISIONS.md). اقرأ ما تحت كـ**رؤية/فلسفة معمارية** لا كوصف الحالة الفعلية.
 >
@@ -313,7 +313,7 @@ graph TD
 **لماذا:** الهندسة المفرطة هي نمط فشل مُسمّى ("مطرقة لكسر جوزة"). البيانات صارخة: نحو 95% من تجارب GenAI المؤسسية لا تُحدث أثراً ملموساً، وقرابة 30% تُهجَر بعد POC — والسبب الغالب تشغيلي/بنيوي لا جودة الموديل. التعقيد المبكّر يستنزف الجهد دون عائد.
 
 **كيف يظهر عملياً:**
-- المرحلة الأولى = ثلاث حاويات فقط: Open WebUI ← LiteLLM ← المحرّك المحلي، عبر Docker Compose، مع Postgres لحالة البوّابة. *(الآن: 4 خدمات فعليّة — open-webui · litellm · llamacpp · postgres — [ADR-025](docs/DECISIONS.md).)*
+- المرحلة الأولى = ثلاث حاويات فقط: Open WebUI ← LiteLLM ← المحرّك المحلي، عبر Docker Compose، مع Postgres لحالة البوّابة. *(الآن: 4 خدمات فعليّة — open-webui · litellm · vllm · postgres — [ADR-025](docs/DECISIONS.md)/[ADR-028](docs/DECISIONS.md).)*
 - نؤجّل صراحةً: Kubernetes، autoscaling (KEDA/Karpenter)، Redis متعدّد النسخ، MIG، vLLM — كلها **"لاحقاً، ليس الآن"**.
 - القاعدة: نُشغّل البسيط، نفهم القطع المتحرّكة، ثم نضيف الضوابط التي يفرضها واقعنا — لا التي يفرضها كتالوج الميزات.
 
@@ -572,7 +572,7 @@ graph TD
 
 > ✅ المحصّلة العملية: تبديل المحرّك = سطر `base_url` واحد في إعداد البوّابة. الانتقال للسحابة = تشغيل **نفس الصور** على عتاد أكبر. لا إعادة بناء، ولا تعديل على الواجهة أو الكود الذي يستهلك الـ API.
 
-> ⚠️ تذكير من دليل التفكير: كل ما هو في عمود "السحابة لاحقاً" هو **تصميم مُعَدّ سلفاً، لا تنفيذ مبكّر**. المرحلة الأولى تبقى بسيطة فعلاً: ثلاث حاويات (Open WebUI + LiteLLM + محرّك) و PostgreSQL. لا Kubernetes ولا Redis ولا autoscaling الآن. *(الآن: 4 خدمات فعليّة — open-webui · litellm · llamacpp · postgres؛ RAG/Memory عبر OWUI فعّالان — [ADR-025](docs/DECISIONS.md).)*
+> ⚠️ تذكير من دليل التفكير: كل ما هو في عمود "السحابة لاحقاً" هو **تصميم مُعَدّ سلفاً، لا تنفيذ مبكّر**. المرحلة الأولى تبقى بسيطة فعلاً: ثلاث حاويات (Open WebUI + LiteLLM + محرّك) و PostgreSQL. لا Kubernetes ولا Redis ولا autoscaling الآن. *(الآن: 4 خدمات فعليّة — open-webui · litellm · vllm · postgres؛ RAG/Memory عبر OWUI فعّالان — [ADR-025](docs/DECISIONS.md)/[ADR-028](docs/DECISIONS.md).)*
 
 <a id="04-architecture-api-contract"></a>
 
@@ -623,7 +623,7 @@ graph TD
 1. **الإدخال:** الموظف يكتب رسالة في Open WebUI (المتصفّح → المنفذ `3000`). تكون جلسته موثّقة مسبقاً عبر تسجيل الدخول (SSO لاحقاً).
 2. **التغليف:** Open WebUI يبني طلب `POST /v1/chat/completions` ويرسله إلى البوّابة على `http://litellm:4000/v1`، حاملاً **المفتاح الافتراضي** (virtual key) لا أي مفتاح خام.
 3. **المصادقة والحوكمة في البوّابة:** LiteLLM يتحقّق من المفتاح، ويطبّق الحصص/الميزانية (budget/rpm/tpm)، ويسجّل البيانات الوصفية (metadata) للتدقيق.
-4. **التوجيه:** بناءً على اسم الموديل المطلوب، تختار البوّابة الوجهة من `model_list` — اليوم محرّك llama.cpp المحلي الذي يخدم Gemma 4 (المعتمد: `http://llamacpp:8080/v1` — [compose/docker-compose.yml](compose/docker-compose.yml))؛ ولاحقاً قد يكون vLLM سحابياً أو موديلاً مُداراً، **بنفس الطلب تماماً**.
+4. **التوجيه:** بناءً على اسم الموديل المطلوب، تختار البوّابة الوجهة من `model_list` — اليوم محرّك vLLM المحلي الذي يخدم Qwen3 4B (المعتمد: `http://vllm:8000/v1` — [compose/docker-compose.yml](compose/docker-compose.yml)، [ADR-028](docs/DECISIONS.md))؛ ولاحقاً نفس vLLM على GPU سحابي أو موديل مُدار، **بنفس الطلب تماماً**.
 5. **الاستدلال:** المحرّك يحمّل السياق على الـ GPU، يولّد التوكنات، ويبثّها (streaming) عائدةً عبر العقد نفسه.
 6. **العودة والتسجيل:** البوّابة تمرّر البثّ إلى الواجهة، تحدّث الإنفاق، وتغلق سجلّ الطلب. الموظف يرى الإجابة تتدفّق حرفاً حرفاً.
 
@@ -695,10 +695,10 @@ flowchart LR
 
 **كيف يُضبط (إشاري):**
 
-> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [compose/docker-compose.yml](compose/docker-compose.yml): المحرّك الحالي صورة llama.cpp server تخدم **Gemma 4** على المنفذ **8080**، لا `llama_cpp.server`/Qwen على 8000.)*
+> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [compose/docker-compose.yml](compose/docker-compose.yml): المحرّك الحالي صورة **vLLM** تخدم **Qwen3 4B** على المنفذ **8000** ([ADR-028](docs/DECISIONS.md))، لا `llama_cpp.server`.)*
 
 ```bash
-# المرحلة الأولى — محلياً على الـ GPU (نموذج تاريخي؛ المعتمد = Gemma 4 على :8080)
+# المرحلة الأولى — محلياً على الـ GPU (نموذج تاريخي؛ المعتمد = vLLM/Qwen3 4B على :8000)
 python -m llama_cpp.server \
   --model /models/<gguf-model>.gguf \
   --n_gpu_layers -1 \      # حمّل كل الطبقات على الـ GPU إن أمكن
@@ -716,7 +716,7 @@ vllm serve <hf-model-id> --port 8000
 
 **كيف يُبدّل بأقل احتكاك:** المحرّك خلف الـ gateway مجرّد URL في `model_list`. التبديل من llama.cpp إلى vLLM = تغيير `api_base` في إعداد LiteLLM فقط. لا client ولا frontend يتأثّر، لأن العقد (`/v1`) ثابت.
 
-> 💡 خيار وسيط لاحقاً: إن احتجت تشغيل عدة موديلات GGUF على GPU محدود، ضع `llama-swap` أمام llama.cpp — يبدّل الموديلات عند الطلب خلف endpoint واحد متوافق مع OpenAI.
+> 💡 خيار وسيط لاحقاً: إن احتجت تشغيل عدة موديلات GGUF على GPU محدود، ضع `llama-swap` أمام llama.cpp — يبدّل الموديلات عند الطلب خلف endpoint واحد متوافق مع OpenAI. *(جُرّبت فعلاً — [ADR-027](docs/DECISIONS.md) — ثم استُبدلت بمحرّك vLLM في [ADR-028](docs/DECISIONS.md).)*
 
 ---
 
@@ -739,15 +739,15 @@ vllm serve <hf-model-id> --port 8000
 
 **كيف يُضبط (إشاري):**
 
-> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [config/litellm/litellm-config.yaml](config/litellm/litellm-config.yaml): الموديل الحالي `Gemma 4` عبر `api_base: http://llamacpp:8080/v1`، لا Qwen عبر `engine:8000`.)*
+> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [config/litellm/litellm-config.yaml](config/litellm/litellm-config.yaml): الموديل الحالي `Qwen3 4B` عبر `api_base: http://vllm:8000/v1` ببادئة `hosted_vllm/` — [ADR-028](docs/DECISIONS.md).)*
 
 ```yaml
-# litellm-config.yaml — هيكل إشاري (المعتمد: Gemma 4 على http://llamacpp:8080/v1)
+# litellm-config.yaml — هيكل إشاري (المعتمد: Qwen3 4B على http://vllm:8000/v1)
 model_list:
   - model_name: Gemma 4              # الاسم الذي يراه المستخدم
     litellm_params:
       model: openai/<model-id>
-      api_base: http://llamacpp:8080/v1 # المحرّك المحلي — هذا السطر هو "مفتاح التبديل"
+      api_base: http://vllm:8000/v1     # المحرّك المحلي — هذا السطر هو "مفتاح التبديل"
       api_key: dummy
   # لاحقاً: أضف موديلاً مُداراً دون لمس أي شيء آخر
   # - model_name: cloud-claude
@@ -827,10 +827,10 @@ WEBUI_URL=https://chat.company.internal
 
 **كيف يُضبط (إشاري):** يُمرَّر المجلّد للحاوية كـ volume، والمسار يُحقن عبر متغيّر بيئة لا hard-code:
 
-> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [compose/docker-compose.yml](compose/docker-compose.yml) و[config/env/.env.example](config/env/.env.example): الخدمة اسمها `llamacpp`، والمسار يأتي من `MODEL_DIR`/`MODEL_FILE` لملفّ Gemma 4 GGUF.)*
+> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [compose/docker-compose.yml](compose/docker-compose.yml) و[config/vllm/vllm-config.yaml](config/vllm/vllm-config.yaml): الخدمة اسمها `vllm`، والموديل يُحدَّد في vllm-config ويُنزَّل تلقائياً من HuggingFace — [ADR-028](docs/DECISIONS.md).)*
 
 ```yaml
-# docker-compose (إشاري — الخدمة المعتمدة اسمها llamacpp)
+# docker-compose (إشاري — الخدمة المعتمدة اسمها vllm)
 services:
   engine:
     volumes:
@@ -974,7 +974,7 @@ Gradio لا يُرحَّل — كان أداة استكشاف فقط. الواج
 #### الخطوات التفصيلية المرقّمة
 1. **هيكل المستودع (config-driven):** أنشئ مجلداً واحداً يحوي `docker-compose.yml`، و`litellm-config.yaml`، و`.env` (لا أسرار في الصور أبداً)، ومجلد `models/` للملفات GGUF.
 2. **محرّك الاستدلال:** عرّف خدمة `llama_cpp.server` تشغّل GGUF وتكشف `/v1` (OpenAI-compatible). اضبط `n_gpu_layers`, `n_ctx` عبر env. احجز الـ GPU في compose عبر `deploy.resources.reservations.devices` (driver: nvidia, capabilities: [gpu]).
-3. **البوّابة LiteLLM:** عرّف خدمة LiteLLM؛ في `litellm-config.yaml` اجعل الموديل المحلي عنصراً في `model_list` يشير إلى `http://llamacpp:8000/v1`. هذا الـ `base_url` هو **نقطة التبديل الوحيدة** مستقبلاً.
+3. **البوّابة LiteLLM:** عرّف خدمة LiteLLM؛ في `litellm-config.yaml` اجعل الموديل المحلي عنصراً في `model_list` يشير إلى `http://vllm:8000/v1`. هذا الـ `base_url` هو **نقطة التبديل الوحيدة** مستقبلاً.
 4. **حالة البوّابة:** أضف **PostgreSQL** (شرط المفاتيح/الميزانيات/التتبّع) عبر `DATABASE_URL`. اضبط `LITELLM_MASTER_KEY` و`LITELLM_SALT_KEY`.
 5. **الواجهة Open WebUI:** عرّف الخدمة واربطها بالبوّابة: `OPENAI_API_BASE_URL=http://litellm:4000/v1` و`OPENAI_API_KEY=<litellm-virtual-key>`. اضبط `WEBUI_SECRET_KEY`.
 6. **عزل الشبكة:** اجعل منفذ LiteLLM داخلياً على شبكة Docker فقط — **لا تكشفه للإنترنت**. المنفذ المكشوف الوحيد هو Open WebUI.
@@ -1157,7 +1157,7 @@ flowchart LR
 **مفتاح واحد لكل (فريق / تطبيق / مستخدم)**، مع نطاق ومحدّدات صريحة عبر `POST /key/generate`:
 
 ```bash
-# يصدره الـ admin بمفتاح master فقط (الموديل المعتمد حالياً = "Gemma 4" — config/litellm/litellm-config.yaml)
+# يصدره الـ admin بمفتاح master فقط (الموديل المعتمد حالياً = "Qwen3 4B" — config/litellm/litellm-config.yaml)
 POST /key/generate
 Authorization: Bearer sk-<master-key>
 {
@@ -1401,13 +1401,13 @@ flowchart LR
 
 > ℹ️ **runbook التشغيل المعتمد والمحدّث = [docs/RUNBOOK.md](docs/RUNBOOK.md)** (الستاك الحيّ: 4 خدمات، الأعطال الشائعة، توليد مفتاح OWUI، تدفّق RAG/Memory). الأوامر أدناه **رؤية-أصلية/إيضاحية** (حقبة `engine:8000`) — للحقائق التشغيلية الجارية اعتمد RUNBOOK وملفّات `compose/`·`config/`.
 
-دليل مفاهيمي سريع لأنماط الأعطال (المنفذ/الأسماء المعتمدة في RUNBOOK: المحرّك `llamacpp` على `:8080`):
+دليل مفاهيمي سريع لأنماط الأعطال (المنفذ/الأسماء المعتمدة في RUNBOOK: المحرّك `vllm` على `:8000`):
 
 **🔴 المحرّك لا يستجيب / أخطاء 5xx من البوّابة**
-1. افحص صحة المحرّك داخل الشبكة (المعتمد: `llamacpp:8080` — إيضاحي: `http://localhost:8000/v1/models`).
-2. افحص سجلّ الحاوية: `docker compose logs llamacpp --tail 100`.
+1. افحص صحة المحرّك داخل الشبكة (المعتمد: `vllm:8000` — endpoint الصحة `/health` بلا مصادقة).
+2. افحص سجلّ الحاوية: `docker compose logs vllm --tail 100`.
 3. ابحث عن `CUDA out of memory` → الموديل/السياق أكبر من الـ VRAM.
-4. الحل السريع: قلّل `CTX_SIZE` أو حمّل موديلاً أصغر أو أعد التشغيل `docker compose restart llamacpp`.
+4. الحل السريع: قلّل `max-model-len` أو `gpu-memory-utilization` (في `config/vllm/vllm-config.yaml`) أو حمّل موديلاً أصغر أو أعد التشغيل `docker compose restart vllm`.
 
 **🔴 بطء شديد / TTFT مرتفع**
 1. هل عدد المستخدمين المتزامنين ارتفع؟ llama.cpp يُسلسل الطلبات فعلياً وينهار تحت التزامن.
@@ -1716,7 +1716,7 @@ flowchart TB
 
 > 💡 الفكرة المعمارية: ثلاث خدمات في شبكة Docker داخلية واحدة. **العميل يرى البوّابة فقط**؛ المحرّك لا يُكشَف خارجياً.
 >
-> ⚠️ **أسماء توضيحية فقط:** المقاطع أدناه تستخدم `engine/gateway/webui/db` للتوضيح. **الأسماء المعتمدة (R-ARCH-31) = `llamacpp` · `litellm` · `open-webui` · `postgres`** (والمحرّك على المنفذ **8080** لا 8000). مصدر الحقيقة = [compose/docker-compose.yml](compose/docker-compose.yml) (**4 خدمات** بعد [ADR-025](docs/DECISIONS.md)).
+> ⚠️ **أسماء توضيحية فقط:** المقاطع أدناه تستخدم `engine/gateway/webui/db` للتوضيح. **الأسماء المعتمدة (R-ARCH-31) = `vllm` · `litellm` · `open-webui` · `postgres`** (والمحرّك على المنفذ **8000**). مصدر الحقيقة = [compose/docker-compose.yml](compose/docker-compose.yml) (**4 خدمات** بعد [ADR-025](docs/DECISIONS.md)/[ADR-028](docs/DECISIONS.md)).
 
 ```yaml
 # مثال إشاري — للفهم لا للنسخ الحرفي
@@ -1779,16 +1779,16 @@ volumes:
 
 > 💡 جوهر "نفس الشكل، صناديق أكبر": `model_list` يربط اسماً منطقياً (يراه المستخدم) بـ `api_base` للمحرّك. **التبديل للسحابة = تغيير سطر `api_base` واحد.**
 >
-> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [config/litellm/litellm-config.yaml](config/litellm/litellm-config.yaml): الموديل الحالي `Gemma 4` عبر `api_base: http://llamacpp:8080/v1`.)*
+> ℹ️ *(مثال إيضاحي/تاريخي — الإعداد المعتمد في [config/litellm/litellm-config.yaml](config/litellm/litellm-config.yaml): الموديل الحالي `Qwen3 4B` عبر `api_base: http://vllm:8000/v1` — [ADR-028](docs/DECISIONS.md).)*
 
 ```yaml
-# مثال إشاري — litellm-config.yaml (المعتمد: Gemma 4 على http://llamacpp:8080/v1)
+# مثال إشاري — litellm-config.yaml (المعتمد: Qwen3 4B على http://vllm:8000/v1)
 model_list:
   # الموديل المحلي عبر llama.cpp اليوم
   - model_name: Gemma 4                        # الاسم الذي يراه العميل/الواجهة
     litellm_params:
       model: openai/<gguf-model-id>            # بادئة openai/ = واجهة متوافقة
-      api_base: http://llamacpp:8080/v1        # ← غيّر هذا فقط للانتقال لـ vLLM/السحابة
+      api_base: http://vllm:8000/v1            # ← غيّر هذا فقط للانتقال للسحابة/مزوّد مُدار
       api_key: "dummy"                          # المحرّك المحلي لا يتحقق
 
   # لاحقاً، ليس الآن: مزج موديل مُدار خلف نفس البوّابة
@@ -1841,12 +1841,12 @@ Authorization: Bearer <LITELLM_MASTER_KEY>
 
 ابدأ بسيطاً واعمل أولاً، ثم صلّب لاحقاً. المرحلة الأولى = أساس + ثلاثة طوابق فقط.
 
-> ℹ️ *(قائمة إيضاحية — خطوات التشغيل المعتمدة والمحدّثة في [docs/RUNBOOK.md](docs/RUNBOOK.md): المحرّك الحالي صورة llama.cpp تخدم Gemma 4 على المنفذ 8080، والبوّابة على `http://llamacpp:8080/v1`.)*
+> ℹ️ *(قائمة إيضاحية — خطوات التشغيل المعتمدة والمحدّثة في [docs/RUNBOOK.md](docs/RUNBOOK.md): المحرّك الحالي vLLM يخدم Qwen3 4B على المنفذ 8000، والبوّابة على `http://vllm:8000/v1`؛ لا تنزيل موديل يدوي — [ADR-028](docs/DECISIONS.md).)*
 
 - [ ] التحقق من تمرير GPU: تشغيل حاوية اختبار CUDA عبر `--gpus=all` ونجاح `nvidia-smi` داخلها (WSL2 backend).
 - [ ] تجهيز ملف موديل GGUF واحد في مجلد الموديلات (`MODEL_DIR`).
-- [ ] تشغيل خدمة **المحرّك** (`llamacpp`) والتأكد أنها تستجيب على `/v1/models` داخلياً.
-- [ ] إعداد `litellm-config.yaml`: `model_list` واحد يشير إلى `http://llamacpp:8080/v1`.
+- [ ] تشغيل خدمة **المحرّك** (`vllm`) والتأكد أنها تستجيب على `/v1/models` داخلياً.
+- [ ] إعداد `litellm-config.yaml`: `model_list` واحد يشير إلى `http://vllm:8000/v1`.
 - [ ] ضبط `.env` (Master Key، Salt Key، DATABASE_URL، كلمات المرور) — قيم قوية، خارج Git.
 - [ ] تشغيل **PostgreSQL** + **البوّابة**، والتأكد من ظهور الموديل عبر `GET /v1/models` على البوّابة.
 - [ ] إصدار **مفتاح افتراضي** واحد للواجهة عبر `POST /key/generate`.
