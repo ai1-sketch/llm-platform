@@ -1,6 +1,6 @@
-# RUNBOOK — تشغيل المنصّة الحيّة (4 خدمات، OWUI أساسي، محرّك vLLM)
+# RUNBOOK — تشغيل المنصّة الحيّة (5 خدمات، OWUI أساسي، محرّك vLLM، قاعدتان مخصّصتان)
 
-> دليل تشغيلي موجز للستاك الفعلي بعد [ADR-025](DECISIONS.md)/[ADR-028](DECISIONS.md): `open-webui` + `litellm` + `vllm` (Qwen3 4B، GPU) + `postgres`. مصدر الحقيقة للإعداد = [compose/docker-compose.yml](../compose/docker-compose.yml) · [config/litellm/litellm-config.yaml](../config/litellm/litellm-config.yaml) · [config/vllm/vllm-config.yaml](../config/vllm/vllm-config.yaml) · [config/env/.env.example](../config/env/.env.example). الحالة في [PROGRESS_MAP](PROGRESS_MAP.md).
+> دليل تشغيلي موجز للستاك الفعلي بعد [ADR-025](DECISIONS.md)/[ADR-028](DECISIONS.md)/[ADR-030](DECISIONS.md): `open-webui` + `litellm` + `vllm` (Qwen3 4B، GPU) + `postgres-litellm` + `postgres-openwebui`. مصدر الحقيقة للإعداد = [compose/docker-compose.yml](../compose/docker-compose.yml) · [config/litellm/litellm-config.yaml](../config/litellm/litellm-config.yaml) · [config/vllm/vllm-config.yaml](../config/vllm/vllm-config.yaml) · [config/env/.env.example](../config/env/.env.example). الحالة في [PROGRESS_MAP](PROGRESS_MAP.md).
 
 ## التشغيل
 ```bash
@@ -10,18 +10,19 @@ docker run --rm --gpus all nvidia/cuda:13.0.2-base-ubuntu22.04 nvidia-smi
 cp config/env/.env.example config/env/.env
 # لا تنزيل موديل يدوي: vLLM يسحب الموديل (من vllm-config.yaml) تلقائياً من HuggingFace أوّل تشغيل إلى volume الكاش
 docker compose --env-file config/env/.env -f compose/docker-compose.yml up -d
-docker compose --env-file config/env/.env -f compose/docker-compose.yml ps   # 4 خدمات (vllm يحتاج دقائق أوّل مرة)
+docker compose --env-file config/env/.env -f compose/docker-compose.yml ps   # 5 خدمات (vllm يحتاج دقائق أوّل مرة)
 ```
 الواجهة: http://127.0.0.1:3000 — **على قاعدة نظيفة، أوّل حساب تنشئه عبر الواجهة يصير الأدمن** (bootstrap رغم `ENABLE_SIGNUP=false`).
 
-## تهيئة قاعدة postgres — أدوار least-privilege (ADR-029)
-النموذج: superuser ‏`postgres` **للإدارة فقط** (لا يتصل به تطبيق)؛ كل تطبيق بدور عادي يملك قاعدته فقط (`litellm`، `openwebui`) + ‏`REVOKE CONNECT FROM PUBLIC` (عزل صلب بين القاعدتين).
-- على **volume نظيف**: سكربت `config/postgres/init/10-app-roles.sh` يبني كل ذلك **تلقائياً** (مُثبَت حيّاً).
-- على **volume قائم** (init لا يعمل تلقائياً): نفّذ **نفس السكربت** يدوياً — idempotent وكلمات السرّ من بيئة الحاوية:
+## تهيئة قاعدتَي postgres — نسخة لكل تطبيق + least-privilege (ADR-029/030)
+النموذج: **نسخة postgres مخصّصة لكل تطبيق** (`postgres-litellm`، `postgres-openwebui`)، وفي كل نسخة: superuser ‏`postgres` **للإدارة فقط** (لا يتصل به تطبيق) + دور تطبيق عادي يملك قاعدته + ‏`REVOKE CONNECT FROM PUBLIC`.
+- على **volume نظيف**: سكربت init الخاص بكل نسخة (`config/postgres/{litellm,openwebui}-init/10-app-role.sh`) يبني كل ذلك **تلقائياً** (مُثبَت حيّاً).
+- على **volume قائم** (init لا يعمل تلقائياً): نفّذ سكربت النسخة يدوياً — idempotent وكلمات السرّ من بيئة الحاوية:
 ```bash
-docker exec llm-platform-postgres-1 bash /docker-entrypoint-initdb.d/10-app-roles.sh
+docker exec llm-platform-postgres-litellm-1   bash /docker-entrypoint-initdb.d/10-app-role.sh
+docker exec llm-platform-postgres-openwebui-1 bash /docker-entrypoint-initdb.d/10-app-role.sh
 ```
-**للانتقال لـ Postgres خارجي/مُدار لاحقاً (ADR-029):** غيّر `host` في `DATABASE_URL`/`PGVECTOR_DB_URL` (compose/‏.env) لعنوان القاعدة المُدارة (غالباً مع `?sslmode=require`) — تغيير رابط فقط، بلا تغيير schema. للترحيل: `pg_dump` القاعدتين ثم استعادة على المُدارة.
+**للانتقال لـ Postgres خارجي/مُدار لاحقاً (ADR-029/030):** كل نسخة تُرفَع لمكانها المُدار باستقلال — غيّر `host` في رابط (روابط) التطبيق المعنيّ في compose (غالباً مع `?sslmode=require`) — تغيير رابط فقط، بلا تغيير schema. للترحيل: `pg_dump` قاعدة النسخة ثم استعادة على المُدارة.
 
 > ⏱️ **الإقلاع البارد لـ vLLM:** أوّل تشغيل = تنزيل الموديل (~2.5GB) + torch.compile (دقائق). الإقلاعات التالية أسرع بكثير (كاش `vllm-cache`). healthcheck يصبر (`start_period: 600s`) — راقب `logs vllm` لا تستعجل.
 
@@ -61,16 +62,16 @@ print(r.json()['key'])"
 - **ℹ️ الرؤية (الصور) معلّقة مؤقتاً ([ADR-028](DECISIONS.md)):** لا موديل multimodal يتّسع على 6GB تحت vLLM — تعود مع GPU أكبر بتبديل الموديل (بلا mmproj؛ برج الرؤية داخل checkpoint HF). وسوم `<think>` من Qwen3 تصل inline وOWUI يطويها (لا `--reasoning-parser` — علّة عرض مفتوحة open-webui#24697).
 
 ## نسخ احتياطي واستعادة (طبقة البيانات — حيث كل القيمة)
-بعد [ADR-029](DECISIONS.md): **بيانات OWUI (ميتاداتا + متجهات) صارت في `postgres`** (قاعدة `openwebui`)، لا في SQLite/Chroma. فالنسخة الأساسية = **`pg_dump` للقاعدتين** (`litellm` + `openwebui`). يبقى `openwebui-data` يحوي **ملفّات الرفع (blobs)** فقط (لا الميتاداتا/المتجهات). **فقدان `LITELLM_SALT_KEY` غير قابل للاستعادة** (R-ARCH-44) — احفظ `.env` بأمان خارج git. *(`hf-cache`/`vllm-cache` قابلان لإعادة الإنشاء.)*
+بعد [ADR-029](DECISIONS.md)/[ADR-030](DECISIONS.md): **بيانات OWUI (ميتاداتا + متجهات) في نسخته `postgres-openwebui`**، وحالة البوّابة في `postgres-litellm` — لا SQLite/Chroma. النسخة الأساسية = **`pg_dump` لكل نسخة** (بحساب إدارتها). يبقى `openwebui-data` يحوي **ملفّات الرفع (blobs)** فقط. **فقدان `LITELLM_SALT_KEY` غير قابل للاستعادة** (R-ARCH-44) — احفظ `.env` بأمان خارج git. *(`hf-cache`/`vllm-cache` قابلان لإعادة الإنشاء.)*
 ```bash
 mkdir -p backups
-# القاعدتان (منطقيّاً، بلا إيقاف) — بحساب الإدارة postgres (الوحيد العابر للقاعدتين، ADR-029)
-docker exec llm-platform-postgres-1 pg_dump -U postgres -d litellm   | gzip > backups/litellm-$(date +%F).sql.gz
-docker exec llm-platform-postgres-1 pg_dump -U postgres -d openwebui | gzip > backups/openwebui-$(date +%F).sql.gz
+# كل قاعدة من نسختها (منطقيّاً، بلا إيقاف) — بحساب إدارة النسخة (ADR-029/030)
+docker exec llm-platform-postgres-litellm-1   pg_dump -U postgres -d litellm   | gzip > backups/litellm-$(date +%F).sql.gz
+docker exec llm-platform-postgres-openwebui-1 pg_dump -U postgres -d openwebui | gzip > backups/openwebui-$(date +%F).sql.gz
 # ملفّات الرفع (blobs على الـ volume)
 docker run --rm -v llm-platform_openwebui-data:/d -v "$PWD/backups":/b alpine \
   tar czf /b/owui-uploads-$(date +%F).tgz -C /d uploads
-# استعادة قاعدة (الستاك متوقّف أو الخدمة مُعادة): zcat backups/openwebui-<تاريخ>.sql.gz | docker exec -i llm-platform-postgres-1 psql -U postgres -d openwebui
+# استعادة قاعدة: zcat backups/openwebui-<تاريخ>.sql.gz | docker exec -i llm-platform-postgres-openwebui-1 psql -U postgres -d openwebui
 ```
 
 ## اختبار دخان (smoke) يدوي — مسار الدردشة + request_id

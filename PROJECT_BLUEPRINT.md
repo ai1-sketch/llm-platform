@@ -2,7 +2,7 @@
 
 > ⚠️ **تحديث الحالة ([ADR-025](docs/DECISIONS.md), 2026-06-26 · [ADR-028](docs/DECISIONS.md), 2026-07-02) — اقرأ أولاً:** هذه الوثيقة الأساسية كُتبت قبل التحوّلات، وبعض تأطيرها قديم. الحقائق الحالية:
 > - **المسار الأساسي = OWUI المدمج (RAG + Memory) كطبقة بيانات** — أي تأطير هنا يصنّف RAG/الذاكرة كـ"لاحقاً" **متجاوَز**؛ هما فعّالان اليوم.
-> - **الستاك الحالي = 4 خدمات** (open-webui · litellm · vllm/Qwen3 4B · postgres). **المحرّك = vLLM منذ ADR-028** (llama.cpp سابقاً) — أي تأطير هنا يصنّف vLLM كـ"لاحقاً في السحابة" **متجاوَز**؛ هو محرّك اليوم، والانتقال للسحابة = نفس المحرّك على GPU أكبر. محرّك سياق مخصّص + خدمة embeddings بُنيا ثم **تقاعدا إلى فرع `future/context-engine`**.
+> - **الستاك الحالي = 5 خدمات** (open-webui · litellm · vllm/Qwen3 4B · postgres-litellm · postgres-openwebui). **المحرّك = vLLM منذ ADR-028**؛ **التخزين = PostgreSQL + pgvector بنسخة مخصّصة لكل تطبيق منذ ADR-029/030** (بدل SQLite/Chroma — الشكل المحلي يطابق الإنتاج). محرّك سياق مخصّص + خدمة embeddings بُنيا ثم **تقاعدا إلى فرع `future/context-engine`**.
 > - تضمين OWUI محلّي (all-MiniLM-384) **خارج البوّابة** — استثناء موثّق لمبدأ "كل شيء عبر البوّابة" (مُسجَّل في ADR-025).
 > - **مصدر الحقيقة للحالة الجارية:** [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) و[docs/DECISIONS.md](docs/DECISIONS.md). اقرأ ما تحت كـ**رؤية/فلسفة معمارية** لا كوصف الحالة الفعلية.
 >
@@ -313,7 +313,7 @@ graph TD
 **لماذا:** الهندسة المفرطة هي نمط فشل مُسمّى ("مطرقة لكسر جوزة"). البيانات صارخة: نحو 95% من تجارب GenAI المؤسسية لا تُحدث أثراً ملموساً، وقرابة 30% تُهجَر بعد POC — والسبب الغالب تشغيلي/بنيوي لا جودة الموديل. التعقيد المبكّر يستنزف الجهد دون عائد.
 
 **كيف يظهر عملياً:**
-- المرحلة الأولى = ثلاث حاويات فقط: Open WebUI ← LiteLLM ← المحرّك المحلي، عبر Docker Compose، مع Postgres لحالة البوّابة. *(الآن: 4 خدمات فعليّة — open-webui · litellm · vllm · postgres — [ADR-025](docs/DECISIONS.md)/[ADR-028](docs/DECISIONS.md).)*
+- المرحلة الأولى = ثلاث حاويات فقط: Open WebUI ← LiteLLM ← المحرّك المحلي، عبر Docker Compose، مع Postgres لحالة البوّابة. *(الآن: 5 خدمات فعليّة — open-webui · litellm · vllm · postgres-litellm · postgres-openwebui — [ADR-025](docs/DECISIONS.md)/[ADR-028](docs/DECISIONS.md)/[ADR-030](docs/DECISIONS.md).)*
 - نؤجّل صراحةً: Kubernetes، autoscaling (KEDA/Karpenter)، Redis متعدّد النسخ، MIG، vLLM — كلها **"لاحقاً، ليس الآن"**.
 - القاعدة: نُشغّل البسيط، نفهم القطع المتحرّكة، ثم نضيف الضوابط التي يفرضها واقعنا — لا التي يفرضها كتالوج الميزات.
 
@@ -572,7 +572,7 @@ graph TD
 
 > ✅ المحصّلة العملية: تبديل المحرّك = سطر `base_url` واحد في إعداد البوّابة. الانتقال للسحابة = تشغيل **نفس الصور** على عتاد أكبر. لا إعادة بناء، ولا تعديل على الواجهة أو الكود الذي يستهلك الـ API.
 
-> ⚠️ تذكير من دليل التفكير: كل ما هو في عمود "السحابة لاحقاً" هو **تصميم مُعَدّ سلفاً، لا تنفيذ مبكّر**. المرحلة الأولى تبقى بسيطة فعلاً: ثلاث حاويات (Open WebUI + LiteLLM + محرّك) و PostgreSQL. لا Kubernetes ولا Redis ولا autoscaling الآن. *(الآن: 4 خدمات فعليّة — open-webui · litellm · vllm · postgres؛ RAG/Memory عبر OWUI فعّالان — [ADR-025](docs/DECISIONS.md)/[ADR-028](docs/DECISIONS.md).)*
+> ⚠️ تذكير من دليل التفكير: كل ما هو في عمود "السحابة لاحقاً" هو **تصميم مُعَدّ سلفاً، لا تنفيذ مبكّر**. المرحلة الأولى تبقى بسيطة فعلاً: ثلاث حاويات (Open WebUI + LiteLLM + محرّك) و PostgreSQL. لا Kubernetes ولا Redis ولا autoscaling الآن. *(الآن: 5 خدمات فعليّة — open-webui · litellm · vllm · postgres-litellm · postgres-openwebui؛ RAG/Memory عبر OWUI فعّالان على PG+pgvector — [ADR-025](docs/DECISIONS.md)/[ADR-029](docs/DECISIONS.md)/[ADR-030](docs/DECISIONS.md).)*
 
 <a id="04-architecture-api-contract"></a>
 
@@ -586,7 +586,7 @@ graph TD
 |----------|-------|
 | `POST /v1/chat/completions` | محادثة الدردشة (الأساسي) — يدعم streaming. |
 | `POST /v1/completions` | إكمال نصّي بسيط (إرث/توافق). |
-| `POST /v1/embeddings` | المتجهات لـ RAG. *(الآن: 4 خدمات؛ RAG/Memory عبر OWUI فعّالان — [ADR-025](docs/DECISIONS.md). تضمين OWUI محلّي خارج البوّابة، استثناء موثّق.)* |
+| `POST /v1/embeddings` | المتجهات لـ RAG. *(الآن: 5 خدمات — ADR-030؛ RAG/Memory عبر OWUI فعّالان — [ADR-025](docs/DECISIONS.md). تضمين OWUI محلّي خارج البوّابة، استثناء موثّق.)* |
 | `GET  /v1/models` | قائمة الموديلات المتاحة — تظهر تلقائياً في منتقي Open WebUI. |
 
 **قواعد الالتزام بالعقد:**
@@ -998,7 +998,7 @@ Gradio لا يُرحَّل — كان أداة استكشاف فقط. الواج
 - ❌ **لا Kubernetes، لا Terraform، لا HA** — حاوية واحدة لكل خدمة تكفي تماماً.
 - ❌ **لا vLLM** — لا تنفع لمستخدم/مستخدمين على 6GB وتحجز VRAM دون فائدة.
 - ❌ **لا SSO/OIDC، لا PII redaction، لا Redis** — مؤجَّلة كلها إلى Phase 3.
-- ❌ **لا vector DB إنتاجي/RAG معقّد** — إن لزمت تجربة RAG، اتركها بأبسط صورة. ("لاحقاً، ليس الآن.") *(الآن: 4 خدمات؛ RAG/Memory عبر OWUI المدمج فعّالان — [ADR-025](docs/DECISIONS.md).)*
+- ❌ **لا vector DB إنتاجي/RAG معقّد** — إن لزمت تجربة RAG، اتركها بأبسط صورة. ("لاحقاً، ليس الآن.") *(الآن: 5 خدمات — ADR-030؛ RAG/Memory عبر OWUI المدمج فعّالان على PG+pgvector — [ADR-025](docs/DECISIONS.md)/[ADR-029](docs/DECISIONS.md).)*
 - ❌ لا تكشف منفذ البوّابة، ولا تستخدم trusted-header auth (قابل للانتحال).
 
 ---
@@ -1399,7 +1399,7 @@ flowchart LR
 
 ### 8.4 Runbooks مختصرة
 
-> ℹ️ **runbook التشغيل المعتمد والمحدّث = [docs/RUNBOOK.md](docs/RUNBOOK.md)** (الستاك الحيّ: 4 خدمات، الأعطال الشائعة، توليد مفتاح OWUI، تدفّق RAG/Memory). الأوامر أدناه **رؤية-أصلية/إيضاحية** (حقبة `engine:8000`) — للحقائق التشغيلية الجارية اعتمد RUNBOOK وملفّات `compose/`·`config/`.
+> ℹ️ **runbook التشغيل المعتمد والمحدّث = [docs/RUNBOOK.md](docs/RUNBOOK.md)** (الستاك الحيّ: 5 خدمات، الأعطال الشائعة، توليد مفتاح OWUI، تدفّق RAG/Memory). الأوامر أدناه **رؤية-أصلية/إيضاحية** (حقبة `engine:8000`) — للحقائق التشغيلية الجارية اعتمد RUNBOOK وملفّات `compose/`·`config/`.
 
 دليل مفاهيمي سريع لأنماط الأعطال (المنفذ/الأسماء المعتمدة في RUNBOOK: المحرّك `vllm` على `:8000`):
 
@@ -1716,7 +1716,7 @@ flowchart TB
 
 > 💡 الفكرة المعمارية: ثلاث خدمات في شبكة Docker داخلية واحدة. **العميل يرى البوّابة فقط**؛ المحرّك لا يُكشَف خارجياً.
 >
-> ⚠️ **أسماء توضيحية فقط:** المقاطع أدناه تستخدم `engine/gateway/webui/db` للتوضيح. **الأسماء المعتمدة (R-ARCH-31) = `vllm` · `litellm` · `open-webui` · `postgres`** (والمحرّك على المنفذ **8000**). مصدر الحقيقة = [compose/docker-compose.yml](compose/docker-compose.yml) (**4 خدمات** بعد [ADR-025](docs/DECISIONS.md)/[ADR-028](docs/DECISIONS.md)).
+> ⚠️ **أسماء توضيحية فقط:** المقاطع أدناه تستخدم `engine/gateway/webui/db` للتوضيح. **الأسماء المعتمدة (R-ARCH-31) = `vllm` · `litellm` · `open-webui` · `postgres-litellm` · `postgres-openwebui`** (والمحرّك على المنفذ **8000**). مصدر الحقيقة = [compose/docker-compose.yml](compose/docker-compose.yml) (**5 خدمات** بعد [ADR-025](docs/DECISIONS.md)/[ADR-028](docs/DECISIONS.md)/[ADR-030](docs/DECISIONS.md)).
 
 ```yaml
 # مثال إشاري — للفهم لا للنسخ الحرفي

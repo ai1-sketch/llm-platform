@@ -22,14 +22,15 @@
 ├── .gitignore
 ├── .github/workflows/ci.yml # بوّابة CI (ruff + gitleaks + تحقّق compose)
 ├── compose/
-│   └── docker-compose.yml   # تعريف الخدمات الأربع (open-webui, litellm, vllm, postgres) — ADR-025/028
+│   └── docker-compose.yml   # تعريف الخدمات الخمس (open-webui, litellm, vllm, postgres-litellm, postgres-openwebui) — ADR-025/028/030
 ├── config/                  # كل الإعداد الخارجي (لا أسرار قيمية)
 │   ├── litellm/
 │   │   └── litellm-config.yaml   # model_list + routing — نقطة التبديل الوحيدة
 │   ├── vllm/
 │   │   └── vllm-config.yaml      # إعداد المحرّك: الموديل + معاملات الذاكرة/السياق (ADR-028)
 │   ├── postgres/
-│   │   └── init/                 # تهيئة قاعدة/دور openwebui + امتداد vector على volume نظيف (ADR-029)
+│   │   ├── litellm-init/         # تهيئة نسخة postgres-litellm: دور/قاعدة + عزل (ADR-029/030)
+│   │   └── openwebui-init/       # تهيئة نسخة postgres-openwebui: دور/قاعدة + عزل + امتداد vector (ADR-029/030)
 │   └── env/
 │       └── .env.example          # قالب المتغيّرات (placeholders فقط)
 ├── docs/                    # كل وثائق الحوكمة (هذا الملف وإخوته)
@@ -83,7 +84,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ vllm (llama.cpp ساب�
 ## 4. اصطلاحات التسمية (Naming)
 
 - **R-ARCH-30** — **الملفات والمجلدات:** `kebab-case` (مثل `litellm-config.yaml`). الاستثناء الوحيد: الوثائق بصيغة `SCREAMING_SNAKE_CASE.md`.
-- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `vllm`, `postgres` (4 خدمات؛ المحرّك `vllm` منذ [ADR-028](DECISIONS.md) بعدما كان `llamacpp` — الاسم يتبع المحرّك الفعلي بصدق؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine` بعد [ADR-025](DECISIONS.md)). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة (مفروض آلياً في CI — `check_invariants.py`). **مُحلّ:** مقاطع PROJECT_BLUEPRINT §10.2 تستخدم أسماء توضيحية (`engine/gateway/webui/db`)، وقد وُسِمت صراحةً كأمثلة إيضاحية مع الإشارة للأسماء المعتمدة ومصدر الحقيقة (`compose/docker-compose.yml`) — فلا تناقض فعليّاً مع القاعدة.
+- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `vllm`, `postgres-litellm`, `postgres-openwebui` (5 خدمات؛ المحرّك `vllm` منذ [ADR-028](DECISIONS.md)؛ قاعدتا postgres مخصّصتان — نسخة لكل تطبيق — منذ [ADR-030](DECISIONS.md)؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine` بعد [ADR-025](DECISIONS.md)). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة (مفروض آلياً في CI — `check_invariants.py`). **مُحلّ:** مقاطع PROJECT_BLUEPRINT §10.2 تستخدم أسماء توضيحية (`engine/gateway/webui/db`)، وقد وُسِمت صراحةً كأمثلة إيضاحية مع الإشارة للأسماء المعتمدة ومصدر الحقيقة (`compose/docker-compose.yml`) — فلا تناقض فعليّاً مع القاعدة.
 - **R-ARCH-32** — **متغيّرات البيئة:** `SCREAMING_SNAKE_CASE` ببادئة المكوّن: `LITELLM_*`, `WEBUI_*`, `DATABASE_URL`. تتطابق حرفياً مع `config/env/.env.example`.
 - **R-ARCH-33** — **أسماء الموديلات في `model_list`:** `model_name` لصيقة عرض/منتج يختارها المالك (قد تكون اسم الموديل الفعلي مثل `Qwen3 4B`، أو اسماً منطقياً مثل `local-chat`) — [ADR-017](DECISIONS.md). **حياديّة التبديل تُصان على مستوى الكود/العقد** (العميل يستهدف `api_base` للبوّابة بلا كود خاص بمحرّك — R-ARCH-10/14)، لا على مستوى اللصيقة؛ فإن ذكرت اللصيقة الموديل تُحدَّث عند التبديل (سطر واحد). فحص: لا كود عميل يربط بمحرّك بعينه.
 - **R-ARCH-34** — حقل `service` في كل log/خطأ (R-ERR-05) **يطابق حرفياً اسم خدمة Docker** المعتمدة في R-ARCH-31 (`litellm`، لا `litellm-gateway`)؛ كي يعمل تتبّع `request_id` عبر الطبقات بـ grep واحد (R-ERR-19).

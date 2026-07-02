@@ -1,7 +1,7 @@
 """فحص ثوابت المعمارية على compose — حوكمة قابلة للتنفيذ (ADR-026).
 
 يحوّل ثوابت كانت تُفحَص بالعين إلى فحص آليّ في CI:
-- R-ARCH-31: أسماء خدمات Docker ضمن القائمة المعتمدة (4 خدمات).
+- R-ARCH-31: أسماء خدمات Docker ضمن القائمة المعتمدة (5 خدمات).
 - R-ARCH-24: لا تكشف منفذاً سوى الواجهة (`open-webui`).
 - R-LAW-06: منفذ الواجهة يربط على 127.0.0.1 افتراضياً (لا 0.0.0.0).
 
@@ -14,7 +14,8 @@ import sys
 import yaml
 
 COMPOSE = pathlib.Path(__file__).resolve().parents[2] / "compose" / "docker-compose.yml"
-ALLOWED = {"open-webui", "litellm", "vllm", "postgres"}  # R-ARCH-31 (المحرّك vllm منذ ADR-028)
+# R-ARCH-31 — المحرّك vllm منذ ADR-028؛ قاعدتان مخصّصتان منذ ADR-030
+ALLOWED = {"open-webui", "litellm", "vllm", "postgres-litellm", "postgres-openwebui"}
 PUBLIC = "open-webui"  # الخدمة الوحيدة المسموح لها بكشف منفذ (R-ARCH-24)
 
 
