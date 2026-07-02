@@ -1,26 +1,15 @@
 # llm-platform — إعداد LiteLLM = **نقطة التبديل الوحيدة** (R-ARCH-45).
-# البدء بمحرّك محلي Gemma 4 (ADR-010/011). اسم الموديل = اسمه الفعلي "Gemma 4"؛ "Sankari Chat" علامة الواجهة في WEBUI_NAME لا اسم الموديل (ADR-017، يستبدل ADR-016).
-# تبديل المحرّك/المزوّد لاحقاً = تعديل هذا الملف **فقط** (سطر واحد).
-# ملاحظة (ADR-025): الذاكرة/RAG عبر ميزات OWUI المدمجة؛ لا hook ذاكرة ولا موديل embed-default هنا.
+# المحرّك المحلي = vLLM (ADR-028، يستبدل تجربة llama-swap/ADR-027). موديل الاختبار = Qwen3 4B (الموديل تفصيل قابل للتبديل — قرار المالك).
+# تبديل المحرّك/المزوّد = تعديل هذا الملف **فقط** (سطر واحد). تبديل موديل vLLM نفسه = config/vllm/vllm-config.yaml.
+# ملاحظة (ADR-028): لا max_tokens افتراضي — vLLM يرفض بـ 400 عند prompt+max_tokens > النافذة (لا يقصّ كما llama.cpp)؛ غيابه = ملء ما تبقّى من السياق.
 
 model_list:
-  - model_name: Gemma 4                    # اسم الموديل الفعلي كما يراه المستخدم (ADR-017). "Sankari Chat" = علامة الواجهة في WEBUI_NAME لا اسم الموديل
+  - model_name: Qwen3 4B                   # الاسم الفعلي المعروض للمستخدم (ADR-017: تسمية صادقة؛ "Sankari Chat" = علامة الواجهة لا الموديل)
     litellm_params:
-      model: openai/gemma-4-e2b            # بادئة openai/ = عميل OpenAI-compatible
-      api_base: http://llamacpp:8080/v1    # خدمة المحرّك على شبكة compose الداخلية
-      api_key: os.environ/LLAMACPP_API_KEY # يطابق --api-key للمحرّك (داخلي)
-      max_tokens: 2048                     # ميزانية افتراضية تكفي تفكير Gemma 4 + الجواب (تُطبَّق عند إغفال العميل)
-    model_info:
-      supports_vision: true                # يسمح بتمرير الصور (image_url/base64) عبر العقد إلى المحرّك (ADR-014)
-  # Gemma 4 4B (E4B) عبر llama-swap — تجربة موديل محلّي أكبر (ADR-027). نفس نقطة المحرّك؛ llama-swap يبدّل بالاسم.
-  - model_name: Gemma 4 4B
-    litellm_params:
-      model: openai/gemma-4-e4b            # يطابق مفتاح llama-swap `gemma-4-e4b` (ADR-027)
-      api_base: http://llamacpp:8080/v1
-      api_key: os.environ/LLAMACPP_API_KEY
-      max_tokens: 2048
-    model_info:
-      supports_vision: false               # E4B نصّي حالياً (mmproj يُضاف لاحقاً بضبط ctx)
+      model: hosted_vllm/qwen3-4b          # مزوّد vLLM المخصّص في LiteLLM (يمرّر reasoning/tools قياسياً)؛ يطابق served-model-name في vllm-config
+      api_base: http://vllm:8000/v1        # خدمة المحرّك على شبكة compose الداخلية (منفذ vLLM الافتراضي)
+      api_key: os.environ/VLLM_API_KEY     # يطابق VLLM_API_KEY للمحرّك (داخلي)
+    # لا model_info/supports_vision: الرؤية معلّقة مؤقتاً — لا موديل multimodal يتّسع على 6GB تحت vLLM (ADR-028؛ تعود مع GPU أكبر بتبديل الموديل)
   # للتبديل لـ managed لاحقاً: علّق ما فوق وفعّل أحد البدائل (وحدّث model_name ليطابق الموديل الجديد — ADR-017):
   #   model: anthropic/<model>   api_key: os.environ/ANTHROPIC_API_KEY
   #   model: openai/<model>      api_key: os.environ/OPENAI_API_KEY

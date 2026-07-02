@@ -2,7 +2,7 @@
 
 منصّة خدمة نماذج لغوية (LLM) داخلية، تبدأ صغيرة على جهاز واحد ومصمّمة للنمو إلى السحابة دون إعادة بناء. المبدأ المركزي: **توحيد كل شيء خلف OpenAI-compatible API + حاويات Docker + إعدادات خارجية** — *"نفس الشكل، صناديق أكبر"*.
 
-> **الحالة:** Phase 1 شغّال end-to-end ✅ — **4 خدمات** محاواة + رؤية (صور) + CI. الذاكرة/الملفات عبر ميزات **Open WebUI المدمجة** (RAG + Personalization Memory، [ADR-025](docs/DECISIONS.md)). الواجهة على http://127.0.0.1:3000.
+> **الحالة:** Phase 1 شغّال end-to-end ✅ — **4 خدمات** محاواة + CI. المحرّك = **vLLM** (موديل اختبار Qwen3 4B، [ADR-028](docs/DECISIONS.md)؛ الرؤية معلّقة مؤقتاً حتى GPU أكبر). الذاكرة/الملفات عبر ميزات **Open WebUI المدمجة** (RAG + Personalization Memory، [ADR-025](docs/DECISIONS.md)). الواجهة على http://127.0.0.1:3000.
 >
 > 🧭 **للبدء أو الاستئناف بعد أي انقطاع: اقرأ [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) أولاً.**
 >
@@ -11,12 +11,12 @@
 ## 🏗️ المعمارية (4 خدمات)
 
 ```text
-open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (Gemma 4، GPU) ──▶ GGUF
+open-webui ──/v1──▶ litellm ──/v1──▶ vllm (Qwen3 4B، GPU) ──▶ HF model
  (الواجهة +        (البوّابة)         └──▶ postgres (pgvector: حالة litellm)
   RAG + Memory)
 ```
 
-كل تخاطب موديل عبر العقد `OpenAI /v1` والبوّابة. تبديل المحرّك/المزوّد = سطر واحد في `config/litellm/litellm-config.yaml`. اسم الموديل المعروض = **Gemma 4**؛ و**Sankari Chat** = اسم الواجهة (`WEBUI_NAME`) لا الموديل ([ADR-017](docs/DECISIONS.md)). البوّابة والمحرّك وpostgres **غير مكشوفة** (R-ARCH-24)؛ المنفذ العام الوحيد = الواجهة.
+كل تخاطب موديل عبر العقد `OpenAI /v1` والبوّابة. تبديل المحرّك/المزوّد = سطر واحد في `config/litellm/litellm-config.yaml`؛ تبديل موديل vLLM = سطران في `config/vllm/vllm-config.yaml` (التنزيل تلقائي من HuggingFace — [ADR-028](docs/DECISIONS.md)). اسم الموديل المعروض = **Qwen3 4B** (تسمية صادقة)؛ و**Sankari Chat** = اسم الواجهة (`WEBUI_NAME`) لا الموديل ([ADR-017](docs/DECISIONS.md)). البوّابة والمحرّك وpostgres **غير مكشوفة** (R-ARCH-24)؛ المنفذ العام الوحيد = الواجهة.
 
 ## 🧠 الذاكرة والملفات (Open WebUI المدمج)
 بعد [ADR-025](docs/DECISIONS.md)، تتولّى Open WebUI طبقة البيانات: **RAG للمستندات** (تقطيع + استرجاع top-k + استشهادات + استخراج متعدّد الصيغ) و**ذاكرة per-user** (`Settings > Personalization > Memory`، `ENABLE_MEMORIES=true`). محرّك السياق المخصّص (تضمين عبر البوّابة + استرجاع hybrid + التقاط محادثة تلقائي عابر للجلسات) محفوظ على فرع `future/context-engine` لتطوير مستقبلي.
@@ -31,7 +31,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (Gemma 4، GPU
 | [docs/CONSTITUTION.md](docs/CONSTITUTION.md) | الدستور الأعلى: الفلسفة، القوانين، معيار "تمّ"، آلية العمل |
 | [docs/ARCHITECTURE_RULES.md](docs/ARCHITECTURE_RULES.md) | المجلدات، الطبقات، الاستيراد، التسمية، config-driven |
 | [docs/ERROR_AND_OBSERVABILITY_POLICY.md](docs/ERROR_AND_OBSERVABILITY_POLICY.md) | عقيدة "الخطأ يبلّغ عن نفسه" + الرصد |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | سجل القرارات المعمارية (ADR-001..027) |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | سجل القرارات المعمارية (ADR-001..028) |
 | [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) | خريطة التتبّع الحيّة — نقطة الاستئناف |
 | [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md) | المخطّط الهندسي الكامل (الرؤية + الخلفية) |
 | **مرجع / متقاعد** | [docs/specs/CONTEXT_ENGINE_V1.md](docs/specs/CONTEXT_ENGINE_V1.md) + [research/](research/) (CONTEXT_ENGINE_RATIONALE · MEMORY_LANDSCAPE · VISION_SETUP) — مواصفة محرّك السياق المتقاعد + الأبحاث الداعمة ([ADR-025](docs/DECISIONS.md)) |
@@ -43,15 +43,15 @@ open-webui ──/v1──▶ litellm ──/v1──▶ llamacpp (Gemma 4، GPU
 - **الجودة أولاً، لا اختصارات.** والخطأ يبلّغ عن نفسه (JSON + `request_id` عبر الطبقات).
 
 ## ▶️ التشغيل
-شرط مسبق: Docker Desktop (خلفية WSL2) + تعريف NVIDIA يدعم GPU. من **جذر المستودع**:
+شرط مسبق: Docker Desktop (خلفية WSL2) + تعريف NVIDIA يدعم GPU **بإصدار R580+** (صورة المحرّك CUDA 13 — [ADR-028](docs/DECISIONS.md)). من **جذر المستودع**:
 
-1. **حمّل ملفّ الموديل** (GGUF — كبير، خارج git) → `models-gemma4/`: `gemma-4-E2B-it-qat-*.gguf` + `mmproj-F16.gguf` (للرؤية). *(اسم الملف يخصّ نسختنا المحلّية من Gemma 4 — لا مصدر عامّ مضمون؛ لأي GGUF آخر اضبط `MODEL_FILE`/`MMPROJ_FILE` في `.env`. اسم الموديل المعروض في البوّابة يبقى مستقلّاً — ADR-017.)*
-2. **الأسرار:** `cp config/env/.env.example config/env/.env`، ثم املأ القيم وولّد الأسرار (`openssl rand -hex 32`)، وولّد الـ virtual key (`OPENWEBUI_LITELLM_KEY`) من litellm عبر `/key/generate`.
-3. **التشغيل:**
+1. **الأسرار:** `cp config/env/.env.example config/env/.env`، ثم املأ القيم وولّد الأسرار (`openssl rand -hex 32`) — اترك `OPENWEBUI_LITELLM_KEY` على قيمته المؤقتة الآن (يُولَّد في الخطوة 3 بعد إقلاع البوّابة). *(لا تنزيل موديل يدوي — vLLM يسحب الموديل المحدّد في `config/vllm/vllm-config.yaml` تلقائياً من HuggingFace أوّل تشغيل؛ `HF_TOKEN` فقط للموديلات المقفلة — [ADR-028](docs/DECISIONS.md).)*
+2. **التشغيل:**
    ```bash
    docker compose --env-file config/env/.env -f compose/docker-compose.yml up -d
    ```
-4. **تحقّق:** افتح http://127.0.0.1:3000 وأرسل رسالة. إن ظهر خطأ، راجع حالة الخدمات وسجلّاتها (`docker compose … ps` / `logs`). فحص GPU المسبق: `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi`. **تفاصيل التشغيل والأعطال الشائعة: [docs/RUNBOOK.md](docs/RUNBOOK.md).**
+3. **الـ virtual key (مرة واحدة):** بعد أن تصبح `litellm` بحالة healthy، ولّد `OPENWEBUI_LITELLM_KEY` بالأمر الجاهز في [docs/RUNBOOK.md](docs/RUNBOOK.md)، ضعه في `.env`، ثم `docker compose … up -d open-webui` لإعادة تحميل الواجهة به.
+4. **تحقّق:** افتح http://127.0.0.1:3000 وأرسل رسالة (أوّل إقلاع لـ vLLM يأخذ دقائق: تنزيل + torch.compile). إن ظهر خطأ، راجع حالة الخدمات وسجلّاتها (`docker compose … ps` / `logs`). فحص GPU المسبق: `docker run --rm --gpus all nvidia/cuda:13.0.2-base-ubuntu22.04 nvidia-smi`. **تفاصيل التشغيل والأعطال الشائعة: [docs/RUNBOOK.md](docs/RUNBOOK.md).**
 
 ## 🧪 التطوير (Developer setup)
 المسار الأساسي بلا كود بايثون؛ بوّابة الجودة = **ruff (lint/format) + gitleaks** + تحقّق `compose config` (تُفرَض في CI: [.github/workflows/ci.yml](.github/workflows/ci.yml)). *(mypy + pytest من سلسلة [ADR-008](docs/DECISIONS.md) يعودان تلقائياً متى عاد كود بايثون للمسار الأساسي.)*

@@ -1,0 +1,14 @@
+# llm-platform — إعداد محرّك vLLM (ADR-028). يحلّ محلّ config/llama-swap/llama-swap.yaml.
+# المفاتيح = أسماء معاملات `vllm serve` بصيغتها الطويلة (docs.vllm.ai/en/stable/configuration/serve_args). الأسبقية: CLI > هذا الملف > الافتراضات.
+# تبديل الموديل = تعديل model + served-model-name هنا فقط (وتحديث model_name المعروض في litellm-config — ADR-017).
+# ترقية GPU = رفع gpu-memory-utilization / max-model-len هنا فقط (القيم الحالية محافظة لبطاقة 6GB تشارك شاشة ويندوز).
+# لا --reasoning-parser عمداً: علّة عرض مفتوحة في OWUI مع reasoning_content المنفصل (open-webui#24697) — وسوم <think> تصل inline وOWUI يطويها.
+
+model: Qwen/Qwen3-4B-AWQ            # موديل الاختبار (ADR-028): غير مقفل، AWQ 4-bit ~2.5GB — يُنزَّل تلقائياً أول تشغيل
+served-model-name: qwen3-4b          # الاسم الذي تخاطبه البوّابة (يطابق litellm: hosted_vllm/qwen3-4b)
+host: 0.0.0.0
+port: 8000
+gpu-memory-utilization: 0.75         # الافتراضي 0.92 يسبّب OOM على 6GB مشتركة مع عرض ويندوز (WSL2)
+max-model-len: 8192                  # نافذة مطابقة لما قبل التحوّل (ADR-027)
+max-num-seqs: 4                      # تزامن متواضع يناسب 1–10 مستخدمين على 6GB
+kv-cache-dtype: fp8                  # يقلّص ذاكرة KV للنصف (fp8_e4m3 مدعوم على Ada) — يتيح نافذة 8192 على 6GB
