@@ -62,7 +62,7 @@ print(r.json()['key'])"
 - **ℹ️ الرؤية (الصور) معلّقة مؤقتاً ([ADR-028](DECISIONS.md)):** لا موديل multimodal يتّسع على 6GB تحت vLLM — تعود مع GPU أكبر بتبديل الموديل (بلا mmproj؛ برج الرؤية داخل checkpoint HF). وسوم `<think>` من Qwen3 تصل inline وOWUI يطويها (لا `--reasoning-parser` — علّة عرض مفتوحة open-webui#24697).
 
 ## نسخ احتياطي واستعادة (طبقة البيانات — حيث كل القيمة)
-بعد [ADR-029](DECISIONS.md)/[ADR-030](DECISIONS.md): **بيانات OWUI (ميتاداتا + متجهات) في نسخته `postgres-openwebui`**، وحالة البوّابة في `postgres-litellm` — لا SQLite/Chroma. النسخة الأساسية = **`pg_dump` لكل نسخة** (بحساب إدارتها). يبقى `openwebui-data` يحوي **ملفّات الرفع (blobs)** فقط. **فقدان `LITELLM_SALT_KEY` غير قابل للاستعادة** (R-ARCH-44) — احفظ `.env` بأمان خارج git. *(`hf-cache`/`vllm-cache` قابلان لإعادة الإنشاء.)*
+بعد [ADR-029](DECISIONS.md)/[ADR-030](DECISIONS.md): **بيانات OWUI (ميتاداتا + متجهات) في نسخته `postgres-openwebui`**، وحالة البوّابة في `postgres-litellm` — لا SQLite/Chroma. النسخة الأساسية = **`pg_dump` لكل نسخة** (بحساب إدارتها). يبقى `openwebui-data` يحوي **ملفّات الرفع (blobs)** وكاشاً قابلاً لإعادة الإنشاء فقط. **فقدان `LITELLM_SALT_KEY` غير قابل للاستعادة** (R-ARCH-44) — احفظ `.env` بأمان خارج git. *(`hf-cache`/`vllm-cache` قابلان لإعادة الإنشاء.)*
 ```bash
 mkdir -p backups
 # كل قاعدة من نسختها (منطقيّاً، بلا إيقاف) — بحساب إدارة النسخة (ADR-029/030)

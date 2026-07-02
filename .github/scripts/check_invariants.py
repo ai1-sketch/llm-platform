@@ -32,13 +32,19 @@ def check(data: dict) -> list[str]:
         if ports and name != PUBLIC:
             errors.append(f"R-ARCH-24: الخدمة '{name}' تكشف منفذاً (المسموح: {PUBLIC} فقط)")
         if ports and name == PUBLIC:
-            bad = [p for p in ports if "127.0.0.1" not in str(p) and "OPENWEBUI_BIND" not in str(p)]
+            # يجب أن يتضمّن تعريف المنفذ 127.0.0.1 حرفياً (كافتراضي لـ OPENWEBUI_BIND)؛
+            # مجرّد ذكر اسم المتغيّر لا يكفي — افتراضي 0.0.0.0 خرقٌ لـ R-LAW-06 (تدقيق 2026-07-02)
+            bad = [p for p in ports if "127.0.0.1" not in str(p)]
             if bad:
                 errors.append(f"R-LAW-06: منفذ {PUBLIC} لا يربط على 127.0.0.1 افتراضياً: {bad}")
     return errors
 
 
 def main() -> int:
+    # رسائلنا عربية: على Windows (cp1252) الفشل كان يطمر الخطأ الأصلي بـ UnicodeEncodeError
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     data = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
     errors = check(data)
     if errors:

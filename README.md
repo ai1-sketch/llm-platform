@@ -2,7 +2,7 @@
 
 منصّة خدمة نماذج لغوية (LLM) داخلية، تبدأ صغيرة على جهاز واحد ومصمّمة للنمو إلى السحابة دون إعادة بناء. المبدأ المركزي: **توحيد كل شيء خلف OpenAI-compatible API + حاويات Docker + إعدادات خارجية** — *"نفس الشكل، صناديق أكبر"*.
 
-> **الحالة:** Phase 1 شغّال end-to-end ✅ — **5 خدمات** محاواة + CI. المحرّك = **vLLM** (موديل اختبار Qwen3 4B، [ADR-028](docs/DECISIONS.md)؛ الرؤية معلّقة مؤقتاً حتى GPU أكبر). الذاكرة/الملفات عبر ميزات **Open WebUI المدمجة** (RAG + Personalization Memory، [ADR-025](docs/DECISIONS.md))، تخزينها على **PostgreSQL + pgvector بنسخة مخصّصة** ([ADR-029](docs/DECISIONS.md)/[ADR-030](docs/DECISIONS.md)). الواجهة على http://127.0.0.1:3000.
+> **الحالة:** Phase 1 شغّال end-to-end ✅ — **5 خدمات** في حاويات + CI. المحرّك = **vLLM** (موديل اختبار Qwen3 4B، [ADR-028](docs/DECISIONS.md)؛ الرؤية معلّقة مؤقتاً حتى GPU أكبر). الذاكرة/الملفات عبر ميزات **Open WebUI المدمجة** (RAG + Personalization Memory، [ADR-025](docs/DECISIONS.md))، تخزينها على **PostgreSQL + pgvector بنسخة مخصّصة** ([ADR-029](docs/DECISIONS.md)/[ADR-030](docs/DECISIONS.md)). الواجهة على http://127.0.0.1:3000.
 >
 > 🧭 **للبدء أو الاستئناف بعد أي انقطاع: اقرأ [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) أولاً.**
 >
@@ -60,7 +60,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ vllm (Qwen3 4B، GPU) �
 ```bash
 pip install ruff==0.12.0 pre-commit
 ruff check . && ruff format --check .
-pre-commit install                       # مرآة فحوص CI لكل commit
+pre-commit install                       # فحوص الجودة محلياً (ruff/gitleaks)؛ compose+الثوابت تُفرَض في CI
 ```
 
 البنية: المشروع في جذر المستودع؛ `legacy/` = النموذج الأولي المؤرشَف (Qwen3/Gemma، غير مُشغَّل، خارج البوّابة). **كل التفاصيل وحالة البنود في [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md).**
