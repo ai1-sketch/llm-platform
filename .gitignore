@@ -2,6 +2,8 @@
 config/env/.env
 *.override.yml
 *.override.yaml
+# نسخ pg_dump احتياطية — تحوي بيانات/مفاتيح، محلية فقط
+backups/
 
 # موديلات وأوزان كبيرة (تُنزَّل محلياً، خارج git)
 models/
