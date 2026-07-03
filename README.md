@@ -2,24 +2,25 @@
 
 منصّة خدمة نماذج لغوية (LLM) داخلية، تبدأ صغيرة على جهاز واحد ومصمّمة للنمو إلى السحابة دون إعادة بناء. المبدأ المركزي: **توحيد كل شيء خلف OpenAI-compatible API + حاويات Docker + إعدادات خارجية** — *"نفس الشكل، صناديق أكبر"*.
 
-> **الحالة:** Phase 1 شغّال end-to-end ✅ — **4 خدمات** محاواة + CI. المحرّك = **vLLM** (موديل اختبار Qwen3 4B، [ADR-028](docs/DECISIONS.md)؛ الرؤية معلّقة مؤقتاً حتى GPU أكبر). الذاكرة/الملفات عبر ميزات **Open WebUI المدمجة** (RAG + Personalization Memory، [ADR-025](docs/DECISIONS.md)). الواجهة على http://127.0.0.1:3000.
+> **الحالة:** Phase 1 شغّال end-to-end ✅ — **5 خدمات** في حاويات + CI. المحرّك = **vLLM** (موديل اختبار Qwen3 4B، [ADR-028](docs/DECISIONS.md)؛ الرؤية معلّقة مؤقتاً حتى GPU أكبر). الذاكرة/الملفات عبر ميزات **Open WebUI المدمجة** (RAG + Personalization Memory، [ADR-025](docs/DECISIONS.md))، تخزينها على **PostgreSQL + pgvector بنسخة مخصّصة** ([ADR-029](docs/DECISIONS.md)/[ADR-030](docs/DECISIONS.md)). الواجهة على http://127.0.0.1:3000.
 >
 > 🧭 **للبدء أو الاستئناف بعد أي انقطاع: اقرأ [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) أولاً.**
 >
 > 🧪 **محرّك السياق المخصّص** (ذاكرة دلالية L2: M0–M4b) **متقاعد إلى فرع [`future/context-engine`](https://github.com/ai1-sketch/llm-platform/tree/future/context-engine)** كميزة تطوير مستقبلية ([ADR-025](docs/DECISIONS.md)) — ليس على المسار الأساسي.
 
-## 🏗️ المعمارية (4 خدمات)
+## 🏗️ المعمارية (5 خدمات)
 
 ```text
 open-webui ──/v1──▶ litellm ──/v1──▶ vllm (Qwen3 4B، GPU) ──▶ HF model
- (الواجهة +        (البوّابة)         └──▶ postgres (pgvector: حالة litellm)
-  RAG + Memory)
+ (الواجهة +   │      (البوّابة)
+  RAG+Memory) │         └──▶ postgres-litellm (حالة البوّابة: مفاتيح/كلفة)
+              └──▶ postgres-openwebui + pgvector (بيانات OWUI: ميتاداتا + متجهات — ADR-029/030)
 ```
 
-كل تخاطب موديل عبر العقد `OpenAI /v1` والبوّابة. تبديل المحرّك/المزوّد = سطر واحد في `config/litellm/litellm-config.yaml`؛ تبديل موديل vLLM = سطران في `config/vllm/vllm-config.yaml` (التنزيل تلقائي من HuggingFace — [ADR-028](docs/DECISIONS.md)). اسم الموديل المعروض = **Qwen3 4B** (تسمية صادقة)؛ و**Sankari Chat** = اسم الواجهة (`WEBUI_NAME`) لا الموديل ([ADR-017](docs/DECISIONS.md)). البوّابة والمحرّك وpostgres **غير مكشوفة** (R-ARCH-24)؛ المنفذ العام الوحيد = الواجهة.
+كل تخاطب موديل عبر العقد `OpenAI /v1` والبوّابة. تبديل المحرّك/المزوّد = سطر واحد في `config/litellm/litellm-config.yaml`؛ تبديل موديل vLLM = سطران في `config/vllm/vllm-config.yaml` (التنزيل تلقائي من HuggingFace — [ADR-028](docs/DECISIONS.md)). اسم الموديل المعروض = **Qwen3 4B** (تسمية صادقة)؛ و**Sankari Chat** = اسم الواجهة (`WEBUI_NAME`) لا الموديل ([ADR-017](docs/DECISIONS.md)). البوّابة والمحرّك وقاعدتا postgres **غير مكشوفة** (R-ARCH-24)؛ المنفذ العام الوحيد = الواجهة.
 
 ## 🧠 الذاكرة والملفات (Open WebUI المدمج)
-بعد [ADR-025](docs/DECISIONS.md)، تتولّى Open WebUI طبقة البيانات: **RAG للمستندات** (تقطيع + استرجاع top-k + استشهادات + استخراج متعدّد الصيغ) و**ذاكرة per-user** (`Settings > Personalization > Memory`، `ENABLE_MEMORIES=true`). محرّك السياق المخصّص (تضمين عبر البوّابة + استرجاع hybrid + التقاط محادثة تلقائي عابر للجلسات) محفوظ على فرع `future/context-engine` لتطوير مستقبلي.
+بعد [ADR-025](docs/DECISIONS.md)، تتولّى Open WebUI طبقة البيانات: **RAG للمستندات** (تقطيع + استرجاع top-k + استشهادات + استخراج متعدّد الصيغ) و**ذاكرة per-user** (`Settings > Personalization > Memory`، `ENABLE_MEMORIES=true`). التخزين على **PostgreSQL + pgvector بنسخة مخصّصة** (`postgres-openwebui`، بدل SQLite/Chroma — [ADR-029](docs/DECISIONS.md)/[ADR-030](docs/DECISIONS.md)، أساس دائم؛ الموقع قابل للانتقال لخارجي/مُدار بتغيير رابط). محرّك السياق المخصّص (تضمين عبر البوّابة + استرجاع hybrid + التقاط محادثة تلقائي عابر للجلسات) محفوظ على فرع `future/context-engine` لتطوير مستقبلي.
 
 ## 🗺️ خريطة الحوكمة
 
@@ -31,7 +32,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ vllm (Qwen3 4B، GPU) �
 | [docs/CONSTITUTION.md](docs/CONSTITUTION.md) | الدستور الأعلى: الفلسفة، القوانين، معيار "تمّ"، آلية العمل |
 | [docs/ARCHITECTURE_RULES.md](docs/ARCHITECTURE_RULES.md) | المجلدات، الطبقات، الاستيراد، التسمية، config-driven |
 | [docs/ERROR_AND_OBSERVABILITY_POLICY.md](docs/ERROR_AND_OBSERVABILITY_POLICY.md) | عقيدة "الخطأ يبلّغ عن نفسه" + الرصد |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | سجل القرارات المعمارية (ADR-001..028) |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | سجل القرارات المعمارية (ADR-001..030) |
 | [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) | خريطة التتبّع الحيّة — نقطة الاستئناف |
 | [PROJECT_BLUEPRINT.md](PROJECT_BLUEPRINT.md) | المخطّط الهندسي الكامل (الرؤية + الخلفية) |
 | **مرجع / متقاعد** | [docs/specs/CONTEXT_ENGINE_V1.md](docs/specs/CONTEXT_ENGINE_V1.md) + [research/](research/) (CONTEXT_ENGINE_RATIONALE · MEMORY_LANDSCAPE · VISION_SETUP) — مواصفة محرّك السياق المتقاعد + الأبحاث الداعمة ([ADR-025](docs/DECISIONS.md)) |
@@ -59,7 +60,7 @@ open-webui ──/v1──▶ litellm ──/v1──▶ vllm (Qwen3 4B، GPU) �
 ```bash
 pip install ruff==0.12.0 pre-commit
 ruff check . && ruff format --check .
-pre-commit install                       # مرآة فحوص CI لكل commit
+pre-commit install                       # فحوص الجودة محلياً (ruff/gitleaks)؛ compose+الثوابت تُفرَض في CI
 ```
 
 البنية: المشروع في جذر المستودع؛ `legacy/` = النموذج الأولي المؤرشَف (Qwen3/Gemma، غير مُشغَّل، خارج البوّابة). **كل التفاصيل وحالة البنود في [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md).**

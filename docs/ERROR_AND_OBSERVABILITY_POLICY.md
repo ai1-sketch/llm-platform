@@ -2,7 +2,7 @@
 
 > سياسة الأخطاء والرصد لمنصّة `llm-platform`. تُقرأ مع [CONSTITUTION](CONSTITUTION.md) · [ARCHITECTURE_RULES](ARCHITECTURE_RULES.md) · [DECISIONS](DECISIONS.md) · [PROGRESS_MAP](PROGRESS_MAP.md).
 >
-> **الحالة:** نافذة v1 (مُعتمدة ومُلزِمة) · **Owner:** SRE · **النطاق (Phase 1):** المنصّة الفعلية — موديل محلي (vllm/GPU، [ADR-028](DECISIONS.md)) خلف LiteLLM + Open WebUI (تملك RAG + Memory، [ADR-025](DECISIONS.md)) + postgres.
+> **الحالة:** نافذة v1 (مُعتمدة ومُلزِمة) · **Owner:** SRE · **النطاق (Phase 1):** المنصّة الفعلية — موديل محلي (vllm/GPU، [ADR-028](DECISIONS.md)) خلف LiteLLM + Open WebUI (تملك RAG + Memory، [ADR-025](DECISIONS.md)) + قاعدتَي postgres مخصّصتين ([ADR-030](DECISIONS.md)).
 
 العقيدة المركزية: **"الخطأ يبلّغ عن نفسه" (errors that announce themselves).** كل فشل يخبرنا فوراً: **ماذا حدث، في أي طلب، وكيف نصلحه**. الفشل صاخب وواضح، لا صامت ولا غامض.
 
@@ -11,7 +11,7 @@
 | الفئة | ما يُفرَض | المرجع |
 |---|---|---|
 | كودنا (`scripts/`، أي adapter لاحق) | كل القواعد أدناه قابلة للفحص بـ linter / code review | §1, §2, §3 |
-| الخدمات الجاهزة (`litellm`, `open-webui`, `vllm`) | ضبط `config` فقط: مستوى السجل، JSON، healthcheck، تمرير `request_id` | §4, §5 |
+| الخدمات الجاهزة (`litellm`, `open-webui`, `vllm`, قاعدتا postgres) | ضبط `config` فقط: مستوى السجل، JSON، healthcheck، تمرير `request_id` | §4, §5 |
 
 القواعد محدَّدة لـ Phase 1. التوسّع لاحقاً (taxonomy كامل، readiness تفصيلي) **نفس الشكل، صناديق أكبر** — يُضاف عند كتابة أول adapter فعلي، ويُتتبَّع في [PROGRESS_MAP](PROGRESS_MAP.md).
 
@@ -92,7 +92,7 @@ ERROR: request failed
 
 - **R-ERR-14** كل السجلات **JSON سطر واحد** (لا نص حر متعدّد الأسطر). الحقول الأساسية: `timestamp` (UTC ISO-8601), `level`, `service`, `request_id`, `code` (إن وُجد), `message`. يُضبط في الخدمات الجاهزة عبر config.
 - **R-ERR-15** **Correlation/Request ID إلزامي:** يُولَّد عند أول دخول (gateway)، يُمرَّر لكل طبقة لاحقة عبر header `X-Request-ID`، ويظهر في كل سطر log للطلب. هو الخيط الذي يربط الطلب عبر الطبقات.
-- **R-ERR-16** قيمة حقل `service` تطابق **اسم خدمة Docker** المعتمد في `docker-compose.yml` (R-ARCH-31): `open-webui`, `litellm`, `vllm`, `postgres` (4 خدمات؛ المحرّك `vllm` منذ [ADR-028](DECISIONS.md)؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine` بعد [ADR-025](DECISIONS.md)). هذا شرط نجاح "grep واحد على `request_id` عبر الطبقات" (R-ERR-19). الخدمات الأربع صور جاهزة بسجلّها: `litellm` JSON عبر config (`json_logs`) وهي **موضع الرصد الحرج** (request_id + الكلفة عند البوّابة)؛ `vllm` نصّي افتراضي بمستوى مضبوط (`VLLM_LOGGING_LEVEL`) — **استثناء موثّق لـ R-ERR-14** كنمط postgres (المحرّك خلف البوّابة، أخطاؤه تعود للعميل عبرها بعقد OpenAI).
+- **R-ERR-16** قيمة حقل `service` تطابق **اسم خدمة Docker** المعتمد في `docker-compose.yml` (R-ARCH-31): `open-webui`, `litellm`, `vllm`, `postgres-litellm`, `postgres-openwebui` (5 خدمات؛ المحرّك `vllm` منذ [ADR-028](DECISIONS.md)؛ قاعدتان مخصّصتان منذ [ADR-030](DECISIONS.md)؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine` بعد [ADR-025](DECISIONS.md)). هذا شرط نجاح "grep واحد على `request_id` عبر الطبقات" (R-ERR-19). الخدمات الخمس صور جاهزة بسجلّها: `litellm` JSON عبر config (`json_logs`) وهي **موضع الرصد الحرج** (request_id + الكلفة عند البوّابة)؛ `vllm` نصّي افتراضي بمستوى مضبوط (`VLLM_LOGGING_LEVEL`) — **استثناء موثّق لـ R-ERR-14** كنمط قاعدتَي postgres (خلف البوّابة، ليست مسار طلبات مباشراً).
 - **R-ERR-17** المستويات: `DEBUG`, `INFO` (افتراضي), `WARN`, `ERROR` (فشل طلب), `CRITICAL` (فشل يهدّد الخدمة). يُضبط عبر config.
 - **R-ERR-18** ممنوع طباعة الأسرار/محتوى المستخدم الحسّاس في السجل؛ المفاتيح تُقنَّع (`sk-...abcd`). السجل يخرج إلى `stdout`/`stderr` فقط (عقد الحاويات)، لا إلى ملفات داخل الحاوية.
 

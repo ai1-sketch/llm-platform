@@ -1,4 +1,4 @@
-# llm-platform — P-01 stack (ADR-005/010/011، ADR-025، ADR-028). 4 خدمات: open-webui → litellm → vllm (Qwen3 4B، GPU) + postgres.
+# llm-platform — P-01 stack (ADR-005/010/011، ADR-025، ADR-028، ADR-030). 5 خدمات: open-webui → litellm → vllm (Qwen3 4B، GPU) + postgres-litellm + postgres-openwebui.
 # الذاكرة/RAG عبر ميزات OWUI المدمجة (RAG + Personalization Memory، ADR-025). محرّك السياق المخصّص متقاعد إلى فرع future/context-engine.
 # التشغيل (من جذر المستودع):
 #   cp config/env/.env.example config/env/.env   # ثم املأ القيم
@@ -44,14 +44,14 @@ services:
     image: ghcr.io/berriai/litellm@sha256:8f3517476b8293ccc1c3b0da7940d8dabbfe64b013454113f5a3cb68265c439b   # main-stable مُثبَّت بـ digest (2026-06-25)
     restart: unless-stopped
     depends_on:
-      postgres:
+      postgres-litellm:
         condition: service_healthy
       vllm:
         condition: service_started            # لا ننتظر جاهزية المحرّك (إقلاعه البارد دقائق)؛ طلبات ما قبل الجاهزية تفشل بوضوح حتى يصبح healthy
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY مفقود}   # fail-fast (R-ERR-02)
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?LITELLM_SALT_KEY مفقود}
-      DATABASE_URL: postgresql://litellm:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}@postgres:5432/litellm
+      DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD:?LITELLM_DB_PASSWORD مفقود}@postgres-litellm:5432/litellm   # نسخته المخصّصة (ADR-030)؛ دور عادي لا superuser (ADR-029)
       VLLM_API_KEY: ${VLLM_API_KEY:?VLLM_API_KEY مفقود}              # يطابق مفتاح المحرّك (ADR-028)
       LITELLM_LOG: ${LITELLM_LOG:-INFO}                              # مستوى السجل (R-ERR-17)
     volumes:
@@ -72,10 +72,17 @@ services:
     depends_on:
       litellm:
         condition: service_healthy
+      postgres-openwebui:
+        condition: service_healthy            # OWUI يخزّن على نسخته المخصّصة (ADR-029/030)
     environment:
       OPENAI_API_BASE_URL: http://litellm:4000/v1            # تكلّم البوّابة فقط (R-ARCH-10)
       OPENAI_API_KEY: ${OPENWEBUI_LITELLM_KEY:?OPENWEBUI_LITELLM_KEY مفقود}   # virtual key من litellm
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?WEBUI_SECRET_KEY مفقود}
+      # ── تخزين OWUI على PostgreSQL + pgvector (بدل SQLite + Chroma — ADR-029 قرار أساسي دائم؛ نسخة مخصّصة — ADR-030) ──
+      # الرابط config-driven: محلي الآن؛ للانتقال لـ Postgres خارجي/مُدار (RDS/Azure/Cloud SQL، مع sslmode) غيّر المضيف فقط (ADR-029)
+      DATABASE_URL: postgresql://openwebui:${OPENWEBUI_DB_PASSWORD:?OPENWEBUI_DB_PASSWORD مفقود}@postgres-openwebui:5432/openwebui   # ميتاداتا OWUI (مستخدمون/محادثات/معرفة/صلاحيات)
+      VECTOR_DB: pgvector                                    # متجهات OWUI (RAG + ذاكرة) على pgvector بدل Chroma
+      PGVECTOR_DB_URL: postgresql://openwebui:${OPENWEBUI_DB_PASSWORD:?OPENWEBUI_DB_PASSWORD مفقود}@postgres-openwebui:5432/openwebui   # قاعدة المتجهات (نفسها، صريح لتفادي أي fallback)
       GLOBAL_LOG_LEVEL: ${WEBUI_LOG_LEVEL:-INFO}              # مستوى السجل (R-ERR-17)
       WEBUI_NAME: ${WEBUI_NAME:-Sankari Chat}                 # اسم التطبيق/الواجهة المعروض (علامة، ليس اسم الموديل — ADR-017)
       ENABLE_EVALUATION_ARENA_MODELS: "false"                # نُطفئ موديل Arena الافتراضي (يظهر فقط ما تعرّفه البوّابة — حالياً Qwen3 4B)
@@ -94,18 +101,38 @@ services:
       retries: 5
       start_period: 40s
 
-  postgres:                                  # حالة litellm (مفاتيح/كلفة) — يبقى بسجله الافتراضي (استثناء موثّق لـ R-ERR-14؛ ليس مسار طلبات)
-    image: pgvector/pgvector@sha256:131dcf7ff6a900545df8e7e092c270aa8c6db2f2c818e408cb45ec21316b74e6   # pgvector/pgvector:pg16 (PG16 + pgvector) مُثبَّت بـ digest (2026-06-25، ADR-020؛ بدّل postgres:16-alpine)
+  # ── قاعدتا postgres مخصّصتان (ADR-030): نسخة لكل تطبيق — الشكل المحلي يطابق شكل الإنتاج (قاعدة البوّابة ≠ قاعدة بيانات الشركة).
+  #    كلتاهما least-privilege (ADR-029): superuser `postgres` للإدارة فقط؛ التطبيق بدور عادي يملك قاعدته. سجلّهما افتراضي (استثناء موثّق R-ERR-14؛ ليستا مسار طلبات)
+  postgres-litellm:                          # حالة البوّابة (مفاتيح/كلفة)
+    image: pgvector/pgvector@sha256:131dcf7ff6a900545df8e7e092c270aa8c6db2f2c818e408cb45ec21316b74e6   # نفس الصورة المثبّتة للقاعدتين (صورة واحدة تُدار — ADR-020/030؛ الامتداد غير مفعّل هنا)
     restart: unless-stopped
     environment:
-      POSTGRES_USER: litellm
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD مفقود}
-      POSTGRES_DB: litellm
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${LITELLM_DB_ADMIN_PASSWORD:?LITELLM_DB_ADMIN_PASSWORD مفقود}    # سرّ إدارة هذه النسخة — لا يظهر في أي DATABASE_URL تطبيقي
+      LITELLM_DB_PASSWORD: ${LITELLM_DB_PASSWORD:?LITELLM_DB_PASSWORD مفقود}              # يُستهلك في init لإنشاء دور litellm العادي
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-litellm-data:/var/lib/postgresql/data
+      - ../config/postgres/litellm-init:/docker-entrypoint-initdb.d:ro   # دور/قاعدة litellm + عزل CONNECT — تلقائي على volume نظيف (على قائم: RUNBOOK)
     networks: [internal]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres-openwebui:                        # بيانات OWUI (ميتاداتا + متجهات pgvector) — حيث ستعيش بيانات الشركة (اتجاه Data Asset)
+    image: pgvector/pgvector@sha256:131dcf7ff6a900545df8e7e092c270aa8c6db2f2c818e408cb45ec21316b74e6   # pgvector/pgvector:pg16 مُثبَّت بـ digest (ADR-020/029)
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${OPENWEBUI_DB_ADMIN_PASSWORD:?OPENWEBUI_DB_ADMIN_PASSWORD مفقود}   # سرّ إدارة هذه النسخة — لا يظهر في أي DATABASE_URL تطبيقي
+      OPENWEBUI_DB_PASSWORD: ${OPENWEBUI_DB_PASSWORD:?OPENWEBUI_DB_PASSWORD مفقود}           # يُستهلك في init لإنشاء دور openwebui العادي
+    volumes:
+      - postgres-openwebui-data:/var/lib/postgresql/data
+      - ../config/postgres/openwebui-init:/docker-entrypoint-initdb.d:ro   # دور/قاعدة openwebui + عزل CONNECT + امتداد vector — تلقائي على volume نظيف (على قائم: RUNBOOK)
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -115,7 +142,8 @@ networks:
     driver: bridge
 
 volumes:
-  openwebui-data:
-  postgres-data:
+  openwebui-data:            # ملفّات رفع OWUI (blobs) فقط — الميتاداتا/المتجهات في postgres-openwebui (ADR-029)
+  postgres-litellm-data:
+  postgres-openwebui-data:
   hf-cache:        # أوزان الموديلات من HuggingFace (قابل لإعادة الإنشاء — لا يحتاج نسخاً احتياطياً)
   vllm-cache:      # كاش torch.compile لـ vLLM (قابل لإعادة الإنشاء)

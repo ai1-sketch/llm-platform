@@ -1,4 +1,5 @@
-# llm-platform — pre-commit (مرآة فحوص CI، ADR-008). تفعيل: pre-commit install
+# llm-platform — pre-commit (فحوص الجودة المحلية: ruff/gitleaks/hooks — ADR-008). تفعيل: pre-commit install
+# ملاحظة: فحص compose والثوابت المعمارية (ADR-026) يعملان في CI فقط (يحتاجان docker/pyyaml).
 # الإصدارات مثبَّتة (حتمية — ADR-008). مصدر الحقيقة للفرض = CI (.github/workflows/ci.yml).
 # ملاحظة (ADR-025): لا كود بايثون على المسار الأساسي → لا hook mypy؛ ruff يبقى لأي ملف مستقبلي.
 repos:

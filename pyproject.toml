@@ -1,6 +1,6 @@
 # llm-platform — إعداد أدوات الجودة (تجسيد ADR-008). الأدوات: Ruff + Mypy + pytest.
 # النطاق: كود المنصّة في جذر المستودع؛ `legacy/` (النموذج الأولي المؤرشَف) مستثنى من البوّابة.
-# الإصدارات الدقيقة تُثبَّت في lockfile عند أوّل تثبيت (حتمية المخرجات — ADR-008).
+# الإصدارات تُثبَّت حرفياً حيث تُستهلك (CI وREADME: ruff==0.12.0) — حتمية المخرجات (ADR-008).
 
 [project]
 name = "llm-platform"
@@ -41,7 +41,7 @@ max-args = 6               # PLR0913
 # ───────────── Mypy (وضع basic — ADR-008) ─────────────
 [tool.mypy]
 python_version = "3.12"
-plugins = ["pydantic.mypy"]    # يفهم نماذج/حقول Pydantic (MemoryItem — ADR-019)
+# plugins = ["pydantic.mypy"]  # يُعاد تفعيله مع عودة كود Pydantic (كان لمحرّك السياق المتقاعد — ADR-025)
 warn_unused_ignores = true     # يكشف # type: ignore غير المستخدم
 warn_redundant_casts = true
 ignore_missing_imports = true  # basic: تجاهل stubs الخارجية غير المثبَّتة (litellm, asyncpg, httpx)

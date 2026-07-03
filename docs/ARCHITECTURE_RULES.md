@@ -18,32 +18,35 @@
 ├── PROJECT_BLUEPRINT.md     # المخطّط الهندسي المرجعي
 ├── README.md                # مدخل بشري + خريطة الحوكمة
 ├── pyproject.toml           # أدوات الجودة (Ruff — ADR-008)
-├── .pre-commit-config.yaml  # مرآة فحوص CI
+├── .pre-commit-config.yaml  # فحوص الجودة المحلية (ruff/gitleaks)
 ├── .gitignore
+├── .gitattributes           # حارس CRLF لسكربتات الشِل (ADR-029)
 ├── .github/workflows/ci.yml # بوّابة CI (ruff + gitleaks + تحقّق compose)
 ├── compose/
-│   └── docker-compose.yml   # تعريف الخدمات الأربع (open-webui, litellm, vllm, postgres) — ADR-025/028
+│   └── docker-compose.yml   # تعريف الخدمات الخمس (open-webui, litellm, vllm, postgres-litellm, postgres-openwebui) — ADR-025/028/030
 ├── config/                  # كل الإعداد الخارجي (لا أسرار قيمية)
 │   ├── litellm/
 │   │   └── litellm-config.yaml   # model_list + routing — نقطة التبديل الوحيدة
 │   ├── vllm/
 │   │   └── vllm-config.yaml      # إعداد المحرّك: الموديل + معاملات الذاكرة/السياق (ADR-028)
+│   ├── postgres/
+│   │   ├── litellm-init/         # تهيئة نسخة postgres-litellm: دور/قاعدة + عزل (ADR-029/030)
+│   │   └── openwebui-init/       # تهيئة نسخة postgres-openwebui: دور/قاعدة + عزل + امتداد vector (ADR-029/030)
 │   └── env/
 │       └── .env.example          # قالب المتغيّرات (placeholders فقط)
 ├── docs/                    # كل وثائق الحوكمة (هذا الملف وإخوته)
 │   ├── CONSTITUTION.md · ARCHITECTURE_RULES.md · ERROR_AND_OBSERVABILITY_POLICY.md
-│   ├── DECISIONS.md · PROGRESS_MAP.md
+│   ├── DECISIONS.md · PROGRESS_MAP.md · RUNBOOK.md
 │   └── specs/CONTEXT_ENGINE_V1.md   # مواصفة محرّك السياق المتقاعد (مرجع، ADR-025)
 ├── research/               # أبحاث داعمة (CONTEXT_ENGINE_RATIONALE, MEMORY_LANDSCAPE, VISION_SETUP) — معفاة من حدّ 180 سطر
 ├── legacy/                 # النموذج الأولي المؤرشَف (Qwen3/Gemma، غير مُشغَّل، خارج البوّابة)
-└── models-gemma4/          # بقايا GGUF من عهد llama.cpp (git-ignored؛ لم تعد تُستخدم بعد ADR-028 — حذفها قرار مالك)
 ```
 
 > **قرار هيكلي ([ADR-018](DECISIONS.md)):** المنصّة في **جذر المستودع** (رُقِّيت من `llm-platform/`)، والنموذج الأولي القديم مؤرشَف في `legacy/` (متتبَّع، خارج البوّابة). هذا الجدول يعكس الحالة الفعلية المعتمدة.
 
 - **R-ARCH-01** — لكل مجلد جذري **مسؤولية واحدة** كما في الجدول. ممنوع خلط نوعين (لا `*.yaml` إعداد داخل `compose/`، ولا compose داخل `config/`). فحص: مراجعة المسار مقابل الجدول.
 - **R-ARCH-02** — `models/`، `config/env/.env`، وأي `*.override.yml` محلي **مُدرَجة في `.gitignore`** ولا تُرفع أبداً. فحص CI: `git ls-files | grep -E '(^models/|\.env$)'` يجب أن يعيد فراغاً.
-- **R-ARCH-03** — جذر المستودع يحوي فقط: وثائق الحوكمة العليا (`CLAUDE.md`، `PROJECT_BLUEPRINT.md`، `README.md`)، إعداد الأدوات (`pyproject.toml`، `.pre-commit-config.yaml`، `.gitignore`، `.editorconfig`)، ملفّات المشروع المعيارية (`LICENSE`)، و`.github/` (تحوي `SECURITY.md`، `CONTRIBUTING.md`، `CODEOWNERS`، `workflows/`). **لا أسرار** في الجذر؛ كل إعداد تطبيقي مكانه `config/`. فحص: قائمة الجذر مقابل هذه القائمة البيضاء (ADR-018).
+- **R-ARCH-03** — جذر المستودع يحوي فقط: وثائق الحوكمة العليا (`CLAUDE.md`، `PROJECT_BLUEPRINT.md`، `README.md`)، إعداد الأدوات (`pyproject.toml`، `.pre-commit-config.yaml`، `.gitignore`، `.gitattributes` — حارس CRLF من ADR-029، `.editorconfig`)، ملفّات المشروع المعيارية (`LICENSE`)، و`.github/` (تحوي `SECURITY.md`، `CONTRIBUTING.md`، `CODEOWNERS`، `workflows/`). **لا أسرار** في الجذر؛ كل إعداد تطبيقي مكانه `config/`. فحص: قائمة الجذر مقابل هذه القائمة البيضاء (ADR-018).
 - **R-ARCH-04** — كل وثائق الحوكمة تحت `docs/` فقط؛ الروابط المتبادلة بينها **نسبية ومجاورة** (`./X.md`). فحص: link-checker لا يجد رابطاً معطّلاً (dangling).
 - **R-ARCH-05** — وثائق الحوكمة **الأساسية** (CONSTITUTION · ARCHITECTURE_RULES · ERROR_AND_OBSERVABILITY_POLICY · PROGRESS_MAP) يُستحسن أن تكون **< 180 سطراً** (إرشادي بمراجعة بشرية — Ruff بلا قاعدة طول-ملف، [ADR-008](DECISIONS.md)؛ لا بوّابة CI). الإيجاز فضيلة، والتجاوز يستوجب التقسيم. **مُعفى:** سجلّ ADR ([DECISIONS](DECISIONS.md)، ينمو append-only) · `docs/specs/` · `research/` · [PROJECT_BLUEPRINT](../PROJECT_BLUEPRINT.md) (مرجع موسوعي).
 
@@ -80,8 +83,8 @@ open-webui ──/v1──▶ litellm ──/v1──▶ vllm (llama.cpp ساب�
 
 ## 4. اصطلاحات التسمية (Naming)
 
-- **R-ARCH-30** — **الملفات والمجلدات:** `kebab-case` (مثل `litellm-config.yaml`). الاستثناء الوحيد: الوثائق بصيغة `SCREAMING_SNAKE_CASE.md`.
-- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `vllm`, `postgres` (4 خدمات؛ المحرّك `vllm` منذ [ADR-028](DECISIONS.md) بعدما كان `llamacpp` — الاسم يتبع المحرّك الفعلي بصدق؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine` بعد [ADR-025](DECISIONS.md)). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة (مفروض آلياً في CI — `check_invariants.py`). **مُحلّ:** مقاطع PROJECT_BLUEPRINT §10.2 تستخدم أسماء توضيحية (`engine/gateway/webui/db`)، وقد وُسِمت صراحةً كأمثلة إيضاحية مع الإشارة للأسماء المعتمدة ومصدر الحقيقة (`compose/docker-compose.yml`) — فلا تناقض فعليّاً مع القاعدة.
+- **R-ARCH-30** — **الملفات والمجلدات:** `kebab-case` (مثل `litellm-config.yaml`). الاستثناءان: الوثائق بصيغة `SCREAMING_SNAKE_CASE.md`، وملفات بايثون بـ `snake_case.py` (قيد أسماء الوحدات في بايثون).
+- **R-ARCH-31** — **أسماء خدمات Docker حياديّة المزوّد وصريحة الدور:** `open-webui`, `litellm`, `vllm`, `postgres-litellm`, `postgres-openwebui` (5 خدمات؛ المحرّك `vllm` منذ [ADR-028](DECISIONS.md)؛ قاعدتا postgres مخصّصتان — نسخة لكل تطبيق — منذ [ADR-030](DECISIONS.md)؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine` بعد [ADR-025](DECISIONS.md)). ممنوع أسماء غامضة (`app`, `server`, `svc1`) أو أسماء دور عامة (`gateway`, `engine`, `webui`, `db`). فحص: مفاتيح `services:` في `docker-compose.yml` ⊆ هذه القائمة (مفروض آلياً في CI — `check_invariants.py`). **مُحلّ:** مقاطع PROJECT_BLUEPRINT §10.2 تستخدم أسماء توضيحية (`engine/gateway/webui/db`)، وقد وُسِمت صراحةً كأمثلة إيضاحية مع الإشارة للأسماء المعتمدة ومصدر الحقيقة (`compose/docker-compose.yml`) — فلا تناقض فعليّاً مع القاعدة.
 - **R-ARCH-32** — **متغيّرات البيئة:** `SCREAMING_SNAKE_CASE` ببادئة المكوّن: `LITELLM_*`, `WEBUI_*`, `DATABASE_URL`. تتطابق حرفياً مع `config/env/.env.example`.
 - **R-ARCH-33** — **أسماء الموديلات في `model_list`:** `model_name` لصيقة عرض/منتج يختارها المالك (قد تكون اسم الموديل الفعلي مثل `Qwen3 4B`، أو اسماً منطقياً مثل `local-chat`) — [ADR-017](DECISIONS.md). **حياديّة التبديل تُصان على مستوى الكود/العقد** (العميل يستهدف `api_base` للبوّابة بلا كود خاص بمحرّك — R-ARCH-10/14)، لا على مستوى اللصيقة؛ فإن ذكرت اللصيقة الموديل تُحدَّث عند التبديل (سطر واحد). فحص: لا كود عميل يربط بمحرّك بعينه.
 - **R-ARCH-34** — حقل `service` في كل log/خطأ (R-ERR-05) **يطابق حرفياً اسم خدمة Docker** المعتمدة في R-ARCH-31 (`litellm`، لا `litellm-gateway`)؛ كي يعمل تتبّع `request_id` عبر الطبقات بـ grep واحد (R-ERR-19).

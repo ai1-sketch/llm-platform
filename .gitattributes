@@ -1,0 +1,3 @@
+# llm-platform — ضبط نهايات الأسطر (حارس CRLF).
+# سكربتات الشِلّ تُنفَّذ داخل حاويات Linux: CRLF يكسر docker-entrypoint-initdb.d (مُثبَت بمراجعة ADR-029).
+*.sh text eol=lf
