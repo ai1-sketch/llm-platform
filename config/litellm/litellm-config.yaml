@@ -17,7 +17,7 @@ model_list:
 litellm_settings:
   drop_params: true
   json_logs: true                    # تسجيل مهيكل JSON (R-ERR-14)
-  turn_off_message_logging: true     # يمنع تخزين محتوى الرسائل/الردود في spend-logs/الـcallbacks (خصوصية R-ERR-18). مُتحقَّق حيّاً: لا يمسّ stdout — حماية stdout الأساسية = مستوى INFO (لا يسجّل المحتوى؛ DEBUG يسجّله بغضّ النظر عن العلَم)
+  # خصوصية محتوى stdout = مستوى السجل: INFO (الافتراضي) لا يطبع المحتوى؛ لا DEBUG مع بيانات حقيقية (SECURITY). لا redaction no-op — §5 (ADR-031)
   callbacks: ["prometheus"]          # يفعّل /metrics للبوّابة (طلبات/كلفة/زمن). مُتحقَّق حيّاً: 200 + مقاييس litellm_* بمصادقة Bearer (ADR-031)
 
 general_settings:
