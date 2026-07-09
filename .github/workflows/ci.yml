@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate compose config (dummy env so required ${VAR:?} resolve)
         run: |
-          printf 'LITELLM_DB_ADMIN_PASSWORD=x\nLITELLM_DB_PASSWORD=x\nOPENWEBUI_DB_ADMIN_PASSWORD=x\nOPENWEBUI_DB_PASSWORD=x\nLITELLM_MASTER_KEY=x\nLITELLM_SALT_KEY=x\nVLLM_API_KEY=x\nOPENWEBUI_LITELLM_KEY=x\nWEBUI_SECRET_KEY=x\n' > /tmp/ci.env
+          printf 'LITELLM_DB_ADMIN_PASSWORD=x\nLITELLM_DB_PASSWORD=x\nOPENWEBUI_DB_ADMIN_PASSWORD=x\nOPENWEBUI_DB_PASSWORD=x\nLITELLM_MASTER_KEY=x\nLITELLM_SALT_KEY=x\nVLLM_API_KEY=x\nOPENWEBUI_LITELLM_KEY=x\nWEBUI_SECRET_KEY=x\nGRAFANA_ADMIN_PASSWORD=x\n' > /tmp/ci.env
           docker compose -f compose/docker-compose.yml --env-file /tmp/ci.env config -q
       - uses: actions/setup-python@v5
         with:

@@ -51,7 +51,7 @@ print(r.json()['key'])"
 | تنزيل الموديل يفشل 401/403 | موديل مقفل (gated) على HF — اقبل الترخيص على huggingface.co وضع `HF_TOKEN` في `.env` (غير مطلوب لـ Qwen3-4B-AWQ) |
 | `litellm` unhealthy | مفاتيح `.env` (master/salt)؛ صحّة `litellm-config.yaml`؛ `logs litellm` |
 | OWUI لا يقلع / خطأ اتصال قاعدة | تأكّد قاعدة/دور `openwebui` موجودان (قسم التهيئة أعلاه) و`OPENWEBUI_DB_PASSWORD` مضبوط؛ `logs open-webui` |
-| الدردشة 5xx | راجع `ps` + `logs` للخدمة المعنيّة؛ تتبّع `request_id` عبر الطبقات (R-ERR-19) |
+| الدردشة 5xx | راجع `ps` + `logs` للخدمة المعنيّة؛ تتبّع `litellm_call_id` في سجلّ litellm (DEBUG) + سطر الكلفة (INFO) — الرصد عند البوّابة (R-ERR-19، نطاق Phase 1) |
 | رفع صورة في الدردشة → خطأ/تجاهل | متوقَّع: الرؤية معلّقة مؤقتاً (موديل الاختبار نصّي — [ADR-028](DECISIONS.md))؛ تعود بتبديل الموديل مع GPU أكبر |
 | ذاكرة/RAG لا تسترجع في OWUI | `ENABLE_MEMORIES=true`؛ أوّل استخدام RAG يُنزّل موديل التضمين المحلّي؛ راجع أدناه |
 
@@ -88,6 +88,20 @@ print('status', r.status_code, r.json()['choices'][0]['message']['content'][:80]
 "   # 200 + ردّ = المسار حيّ. تتبّع request_id: يظهر litellm_call_id في سجلّات litellm عند LITELLM_LOG=DEBUG (وسطر الكلفة يظهر على INFO: "Spend tracking").
 ```
 *(الثوابت المعمارية الساكنة — أسماء الخدمات/الكشف/الربط — مفروضة آلياً في CI عبر `.github/scripts/check_invariants.py`، ADR-026.)*
+
+## طبقة الرصد (النوع الثاني — Prometheus + Grafana، [ADR-031](DECISIONS.md))
+**اختيارية، خلف `profiles: [monitoring]`** (لا تقلع في `up` الأساسي = 5 خدمات). النوع الأول (تسجيل/كلفة عند البوّابة) دائم؛ هذه طبقة **مقاييس الأداء**.
+```bash
+# 1) أضف سرّ Grafana إلى .env (fail-fast إن غاب):  GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 32)
+# 2) شغّل المراقبة بجانب الستاك الأساسي:
+docker compose --env-file config/env/.env -f compose/docker-compose.yml --profile monitoring up -d
+# 3) Grafana: http://127.0.0.1:3001  (admin / GRAFANA_ADMIN_PASSWORD) → لوحة "vLLM Inference" (محمّلة ككود)
+# إطفاؤها:  docker compose --env-file config/env/.env -f compose/docker-compose.yml --profile monitoring down
+```
+- **يُكشَط:** vLLM `/metrics` كل 15ث (احتفاظ 30 يوماً): امتلاء KV، طابور running/waiting، TTFT p50/95/99، tokens/s، preemptions، e2e latency، prefix-cache hit%. — **لا يُكشَط محتوى الطلبات** (مقاييس عدّية فقط).
+- **litellm `/metrics` غير مكشوط** (محجوب 401 — enterprise، مُتحقَّق حيّاً)؛ **كلفة/إنفاق البوّابة** في `postgres-litellm` (SpendLogs، queryable).
+- prometheus **داخلي فقط** (لا منفذ)؛ استعلامه: `docker exec llm-platform-prometheus-1 wget -qO- 'http://localhost:9090/api/v1/query?query=vllm:kv_cache_usage_perc'`.
+- **حذفها كليّاً:** احذف خدمتَي `prometheus`/`grafana` + volumeيهما من [compose](../compose/docker-compose.yml) (قابل للحذف بسهولة — ADR-031؛ حدّث `check_invariants.py` ALLOWED/PORT_ALLOWED).
 
 ## تبديل الموديل / ترقية GPU / التحوّل لـ managed
 - **موديل محلي آخر:** عدّل `model` + `served-model-name` في [config/vllm/vllm-config.yaml](../config/vllm/vllm-config.yaml) (+ حدّث `model` المطابق و`model_name` المعروض في [litellm-config](../config/litellm/litellm-config.yaml) — ADR-017) ثم `up -d`. التنزيل تلقائي (موديل مقفل؟ `HF_TOKEN` في `.env`).

@@ -25,8 +25,9 @@ extend-exclude = ["legacy"]   # النموذج الأولي المؤرشَف (Qw
 
 [tool.ruff.lint]
 # النواة فقط (نبدأ صغيراً لا 800 قاعدة): E,F=أخطاء حقيقية · I=ترتيب الاستيراد ·
-# UP=تحديث صياغة · B=bugbear · SIM=تبسيط · C90=complexity · PLR0913/0915=حدود هيكلية
-select = ["E", "F", "I", "UP", "B", "SIM", "C90", "PLR0913", "PLR0915"]
+# UP=تحديث صياغة · B=bugbear · SIM=تبسيط · C90=complexity · PLR0913/0915=حدود هيكلية ·
+# BLE001=يرفض except أعمى (except Exception) يبتلع السبب (R-ERR-09/11)
+select = ["E", "F", "I", "UP", "B", "SIM", "C90", "PLR0913", "PLR0915", "BLE001"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10        # C901 — بوّابة (إشارة بَغ، ليست مجرّد أسلوب)

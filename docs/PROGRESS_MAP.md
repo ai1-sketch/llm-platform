@@ -4,7 +4,7 @@
 >
 > الحالة: `[ ]` لم يبدأ · `[~]` جارٍ · `[x]` تمّ. كل بند `P-NN` منجَز يربط PR/قرار في [DECISIONS](DECISIONS.md). مرجع DoD في [CONSTITUTION](CONSTITUTION.md) §3.
 
-> **آخر تحديث:** 2026-07-09 · **المحدِّث:** Chief Architect (معالجة مراجعة Codex المستقلّة — دوران كلمات السرّ + تقوية حارس CI + حلّ تناقض البوّابة؛ فوق نسخة postgres لكل تطبيق — ADR-030)
+> **آخر تحديث:** 2026-07-09 · **المحدِّث:** Chief Architect (طبقة رصد الأداء Prometheus+Grafana — [ADR-031](DECISIONS.md)؛ + تصحيح ادّعاء observability؛ فوق إصلاحات Codex)
 
 ---
 
@@ -14,6 +14,7 @@
 ## 2. أُنجِز مؤخّراً
 > **ملاحظة تاريخية:** البنود أدناه سجلّ زمني. الحالة **الحالية** = **5 خدمات** (open-webui · litellm · vllm · postgres-litellm · postgres-openwebui — [ADR-030](DECISIONS.md)). أي ذكر قديم لخدمتَي `memory`/`embeddings` (عصر "الخمس خدمات" **القديم** قبل ADR-025) أو لـ"4 خدمات" كحاضرٍ يصف حالة **سابقة**؛ وكذلك أي ذكر لـ`llamacpp`/llama-swap/`Gemma 4`/GGUF (المحرّك الحالي = **vllm** وموديل الاختبار = **Qwen3 4B** — [ADR-028](DECISIONS.md))، ولـ SQLite/Chroma كتخزين (الحالي = PostgreSQL+pgvector — [ADR-029](DECISIONS.md)). هذا القسم (مع [DECISIONS](DECISIONS.md) وتاريخ git) هو **سجلّ التغييرات المعتمد** — لا حاجة لـ CHANGELOG منفصل.
 
+- [x] **📊 طبقة رصد الأداء (النوع الثاني) + تصحيح رصد الأخطاء (2026-07-09، [ADR-031](DECISIONS.md)، قرار المالك — فرع `feat/observability`، بانتظار الدمج):** بُني النوع الثاني: **Prometheus + Grafana** خلف `profiles: [monitoring]` (لا يقلعان افتراضياً؛ قابلان للحذف بعلَم) يكشط vLLM `/metrics` (KV%/طابور/TTFT/tokens-s/preemptions/prefix-cache) + لوحة "vLLM Inference" ككود. **مُتحقَّق حيّاً:** prometheus يكشط vLLM الحيّ (target up)، استعلام Grafana→Prometheus ناجح، litellm `/metrics` محجوب (401 enterprise) فأُزيل (الكلفة في postgres-litellm/SpendLogs). والنوع الأول صُحّح: تضييق ادّعاء R-ERR-15/16/19 (الانتشار عبر الطبقات مؤجَّل — تقاعد memory/ADR-025) + فرض redaction + دوران سجلّات + إنفاق per-user + BLE001. الحارس/CI/‏.env.example محدَّثة (7 خدمات). كل بوّابات CI + التحقّق الحيّ خضراء.
 - [x] **🔒 معالجة مراجعة Codex المستقلّة (2026-07-09، دُمجت على master، commit `6c83321`):** 3 إصلاحات مؤكَّدة أغفلها التدقيق السابق — (1) **دوران كلمات سرّ postgres** عبر `ALTER ROLE ... PASSWORD` idempotent في سكربتَي init (**مُثبَت حيّاً** بحاوية pgvector عابرة: إعادة التطبيق بكلمة جديدة تُدوّر الاعتماد والبصمة تتغيّر، الكلمة القديمة تُرفَض، لا تكرار دور/قاعدة)؛ (2) **تقوية `check_invariants.py`** — إمساك خدمة مطلوبة ناقصة + فرض تثبيت الصور بـ `@sha256` + رفض تتبّع `.env`/`backups`/`models` في git (**6 اختبارات سلبية** خضراء)؛ (3) **حلّ تناقض "كل المرور عبر البوّابة"** في `SECURITY.md`/`CONTRIBUTING.md` بإقرار استثناء تضمين OWUI المحلي ([ADR-025](DECISIONS.md)). + "نافذة أوّل-أدمن" وسلاسل التوريد لقائمة "قبل التعريض"، وبانر `PROJECT_BLUEPRINT` يعدّد البقايا القديمة. **كل البوّابات خضراء:** ruff + `check_invariants` + `docker compose config -q` + دوران postgres حيّ. (إصلاحات تنفّذ ADR-026/029/030/025 القائمة — لا ADR جديد.)
 - [x] **🏗️ نسخة postgres مخصّصة لكل تطبيق (2026-07-02، [ADR-030](DECISIONS.md)، قرار المالك):** رُفض الاعتماد على نسخة مشتركة — `postgres-litellm` (حالة البوّابة) + `postgres-openwebui` (بيانات OWUI/pgvector)، كلتاهما بنموذج least-privilege الكامل (أدمن معزول + دور تطبيق + REVOKE) عبر init لكل نسخة. المبرّر: **الشكل المحلي يطابق شكل الإنتاج** — لا "تعديل فكرة + توثيق + إعادة عمل" عند النشر الفعلي. **مُتحقَّق حيّاً:** عزل بنيوي (دور كل تطبيق غير موجود على نسخة الآخر — اختبار سلبي)، litellm ‏74 جدولاً وOWUI ‏43 + vector 0.8.3 كلٌّ على نسخته، 5 خدمات healthy، دخان 200. R-ARCH-31/R-ERR-16 والفحص الآلي محدَّثة (5 خدمات).
 - [x] **🗄️ تخزين OWUI → PostgreSQL + pgvector + أدوار least-privilege (2026-07-02، [ADR-029](DECISIONS.md)، قرار أساسي دائم؛ طوبولوجيا النسخة المشتركة استُبدلت بـ ADR-030):** نُقل OWUI من SQLite+Chroma إلى قاعدة `openwebui` داخل **نفس خدمة postgres** (صفر خدمة جديدة، R-ARCH-31 أخضر)؛ pgvector صار مُستخدَماً فعلاً (يُفعّل ADR-020). **فصل أدوار بقرار المالك** ("لا نبني على أساس غلط"): superuser ‏`postgres` للإدارة فقط، والتطبيقات بأدوار عادية تملك قاعدتها فقط + `REVOKE CONNECT FROM PUBLIC` — أُعيدت تهيئة الـ volume من الصفر عبر `init/10-app-roles.sh` (يبني كل شيء تلقائياً على volume نظيف — DoD §3). **مُتحقَّق حيّاً:** الأدوار الثلاثة بصلاحياتها الصحيحة + اختبار سلبي بالاتجاهين (CONNECT مرفوض) + litellm ‏74 جدولاً وOWUI ‏43 جدولاً (منها `access_grant`) + `document_chunk.vector` + مفتاح OWUI أُعيد توليده + دخان 200. مراجعة عدائية (6 مؤكَّدة) عولجت — منها حارس CRLF (‏`.gitattributes`). **قابلية التبديل موثّقة:** المحرّك (PG+pgvector) ثابت دائم؛ موقعه (محلي ↔ خارجي/مُدار) وطوبولوجيته = تغيير رابط/‏pg_dump فقط.
@@ -67,7 +68,7 @@
 | **P-02** | `litellm-config.yaml`: موديل محلي واحد خلف العقد `/v1` (بدأ Gemma 4 — [ADR-010](DECISIONS.md)؛ حالياً Qwen3 4B — [ADR-028](DECISIONS.md))؛ managed = تبديل سطر واحد. | [x] |
 | **P-03** | `config/env/.env.example` يغطّي كل المفاتيح المطلوبة (لا قيم حقيقية). | [x] |
 | **P-04** | منفذ البوّابة غير مكشوف؛ الوصول داخل شبكة Docker فقط (R-ARCH-24). | [x] |
-| **P-05** | رصد بحدّ أدنى: كل مسار طلب يُصدر `request_id` + سجلّ كلفة (سياسة الرصد). | [x] **مُتحقَّق حيّاً** (grep واحد عبر litellm+memory) |
+| **P-05** | رصد بحدّ أدنى: كل مسار طلب يُصدر `request_id` + سجلّ كلفة (سياسة الرصد). | [x] **عند البوّابة** (litellm: `litellm_call_id` + سطر الكلفة، JSON)؛ الانتشار عبر الطبقات تراجع بتقاعد `memory` (ADR-025) → مؤجَّل |
 
 ## 5. Phase 2+ — صناديق أكبر (محجوز، ليس الآن)
 
@@ -87,7 +88,7 @@
 - [RESOLVED] تشغيل المحرّك = **Docker مع GPU** (قرار المالك، [ADR-011](DECISIONS.md)).
 - [RESOLVED] صورة `ghcr.io/ggml-org/llama.cpp:server-cuda` **تدعم gemma4** (master يومي، الدعم منذ إبريل 2026) — لا حاجة لصورة مخصّصة. شرط: تعريف NVIDIA لويندوز يدعم WSL2 GPU + Docker Desktop WSL2.
 - [RESOLVED] **تحقّق أوّل تشغيل:** GPU داخل الحاوية مؤكَّد (RTX 4050) + Gemma 4 محمّل بلا "unknown architecture" + healthchecks تعمل (5 خدمات healthy).
-- [RESOLVED] **R-ERR-15/16/19 (request_id + service + كلفة بـ JSON):** مُحقَّق فعلياً — `service` يطابق اسم خدمة Docker (litellm/memory)، و`request_id` (litellm_call_id) يمرّ عبر الطبقات، وسطر كلفة per-request يصدر (مُتحقَّق بـ grep حيّ — كود الـ hook + `memory/app.py`).
+- [OPEN] **R-ERR-15/16/19 (انتشار request_id عبر الطبقات):** على master الحالي مؤكَّد **عند البوّابة فقط** (litellm: `litellm_call_id` + سطر الكلفة، JSON). الانتشار الكامل عبر OWUI/vLLM أُثبت تاريخياً بخدمة `memory` (`memory_hook.py` + `memory/app.py`) المتقاعدة إلى `future/context-engine` ([ADR-025](DECISIONS.md)) — مؤجَّل حتى أوّل adapter نملكه. (صُحّح الادّعاء 2026-07-09: مراجعة Codex + تدقيق observability.)
 - [OPEN] أين تُخزَّن الأسرار؟ `.env` محلي الآن مقابل secret manager لاحقاً — Tech Lead — يؤثّر على بنية Compose.
 - [OPEN] مُحفِّز self-host الحقيقي (خصوصية/حجم)؟ — Owner — يؤجَّل حتى طلب فعلي (YAGNI).
 
@@ -113,6 +114,7 @@
 | **المحرّك الحالي: vLLM** | vLLM محرّكاً وحيداً + موديل اختبار Qwen3-4B-AWQ؛ الرؤية معلّقة حتى GPU أكبر | **ADR-028** |
 | **التخزين الأساسي: PG+pgvector** | تخزين OWUI على PostgreSQL+pgvector (بدل SQLite/Chroma) + least-privilege؛ قابل للانتقال لخارجي/مُدار | **ADR-029** |
 | **الطوبولوجيا: نسخة لكل تطبيق** | postgres-litellm + postgres-openwebui (الشكل المحلي = شكل الإنتاج، 5 خدمات) | **ADR-030** |
+| **رصد الأداء: Prometheus+Grafana** | مقاييس vLLM خلف profile monitoring (تجاوز §5 واعٍ للجاهزية) + تصحيح ادّعاء observability | **ADR-031** |
 
 ---
 

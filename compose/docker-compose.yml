@@ -9,10 +9,18 @@
 # ✓ الصور مثبّتة بـ digest (إعادة الإنتاج). للترقية: حدّث الـ digest يدوياً بعد سحب الوسم + اختبار.
 name: llm-platform
 
+# دوران سجلّات موحّد (R-ERR-18): حجم محدود لسائق json-file — يُطبَّق على كل خدمة عبر *default-logging
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   vllm:                                      # المحرّك (R-ARCH-31، ADR-028) — vLLM يخدم موديلاً واحداً مقيماً في الـ VRAM (يستبدل llama-swap/ADR-027)
     image: vllm/vllm-openai:v0.24.0@sha256:251eba5cc7c12fed0b75da22a9240e582b1c9e39f6fbc064f86781b963bd814f   # مُثبَّت بـ digest (2026-07-02، ADR-028). الصورة CUDA 13 → تعريف NVIDIA R580+ على المضيف
     restart: unless-stopped
+    logging: *default-logging
     shm_size: "2gb"                          # PyTorch يحتاج /dev/shm أكبر؛ البديل الرسمي الأكثر عزلاً عن ipc:host (يكفي لـ GPU واحد بلا tensor-parallel)
     volumes:
       - hf-cache:/root/.cache/huggingface    # كاش أوزان HuggingFace — الموديل يُنزَّل تلقائياً أوّل تشغيل (لا خطوة يدوية، DoD §3)
@@ -43,6 +51,7 @@ services:
   litellm:                                   # البوّابة (R-ARCH-31)
     image: ghcr.io/berriai/litellm@sha256:8f3517476b8293ccc1c3b0da7940d8dabbfe64b013454113f5a3cb68265c439b   # main-stable مُثبَّت بـ digest (2026-06-25)
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       postgres-litellm:
         condition: service_healthy
@@ -69,6 +78,7 @@ services:
   open-webui:                                # الواجهة — نقطة الدخول الوحيدة المكشوفة؛ تملك RAG + Memory (ADR-025)
     image: ghcr.io/open-webui/open-webui@sha256:9fcea9c6e32ab60b0498f3986c6cdf651ddbe61db48d2213a3d28048ddd673d4   # v0.10.2 مُثبَّت بـ digest (2026-07-03؛ تنبيه أمني access-control + بحث هجين pgvector أصلي + Events)
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       litellm:
         condition: service_healthy
@@ -89,6 +99,7 @@ services:
       ENABLE_MEMORIES: "true"                                # ميزة الذاكرة per-user المدمجة (سطح الحقائق الفعّال — ADR-025)
       ENABLE_SIGNUP: "false"                                 # لا تسجيل ذاتي مفتوح (تقوية أمنية صريحة — SECURITY/ADR-026؛ لا نترك الافتراضي)
       ENABLE_OLLAMA_API: "false"                             # لا نستخدم Ollama (كل الموديلات عبر litellm)؛ يوقف فحص host.docker.internal:11434 المتكرّر ويقلّص السطح
+      ENABLE_FORWARD_USER_INFO_HEADERS: "true"               # يمرّر هوية مستخدم OWUI للبوّابة (حقل OpenAI user) → نسب الإنفاق per-user في litellm (R-ERR/الكلفة)
     volumes:
       - openwebui-data:/app/backend/data
     ports:
@@ -107,6 +118,7 @@ services:
   postgres-litellm:                          # حالة البوّابة (مفاتيح/كلفة)
     image: pgvector/pgvector@sha256:131dcf7ff6a900545df8e7e092c270aa8c6db2f2c818e408cb45ec21316b74e6   # نفس الصورة المثبّتة للقاعدتين (صورة واحدة تُدار — ADR-020/030؛ الامتداد غير مفعّل هنا)
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${LITELLM_DB_ADMIN_PASSWORD:?LITELLM_DB_ADMIN_PASSWORD مفقود}    # سرّ إدارة هذه النسخة — لا يظهر في أي DATABASE_URL تطبيقي
@@ -124,6 +136,7 @@ services:
   postgres-openwebui:                        # بيانات OWUI (ميتاداتا + متجهات pgvector) — حيث ستعيش بيانات الشركة (اتجاه Data Asset)
     image: pgvector/pgvector@sha256:131dcf7ff6a900545df8e7e092c270aa8c6db2f2c818e408cb45ec21316b74e6   # pgvector/pgvector:pg16 مُثبَّت بـ digest (ADR-020/029)
     restart: unless-stopped
+    logging: *default-logging
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${OPENWEBUI_DB_ADMIN_PASSWORD:?OPENWEBUI_DB_ADMIN_PASSWORD مفقود}   # سرّ إدارة هذه النسخة — لا يظهر في أي DATABASE_URL تطبيقي
@@ -138,6 +151,57 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── طبقة المراقبة (النوع الثاني، ADR-031) — profiles: monitoring؛ لا تقلع افتراضياً (up الأساسي = 5 خدمات).
+  #    تشغيلها:  docker compose --profile monitoring up -d       ·  إطفاؤها: docker compose --profile monitoring down
+  #    حذفها كليّاً = احذف الخدمتين + الـ volumeين أدناه (قابل للحذف بسهولة — قرار المالك، ADR-031).
+  #    R-ARCH-24 مُوسَّع (ADR-031): grafana يكشف منفذاً محليّاً فقط (127.0.0.1) بجانب open-webui.
+  prometheus:                                # مخزن المقاييس — يكشط vLLM + LiteLLM (داخلي فقط، R-ARCH-24)
+    profiles: ["monitoring"]
+    image: prom/prometheus:v3.1.0@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218   # مُثبَّت بـ digest (2026-07-09)
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+    volumes:
+      - ../config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  grafana:                                   # لوحات المقاييس — على 127.0.0.1 فقط (R-ARCH-24 مُوسَّع، ADR-031)
+    profiles: ["monitoring"]
+    image: grafana/grafana:11.4.1@sha256:413503f21b7e854811d74ef68ae1d3dce4c4814aef5daf4424c4a7ef6d42c31d   # مُثبَّت بـ digest (2026-07-09)
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      prometheus:
+        condition: service_started
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD مفقود}   # fail-fast (R-ERR-02)
+      GF_USERS_ALLOW_SIGN_UP: "false"                        # لا تسجيل ذاتي
+      GF_AUTH_ANONYMOUS_ENABLED: "false"                     # لا وصول مجهول
+      GF_ANALYTICS_REPORTING_ENABLED: "false"                # لا إرسال تحليلات خارجية (خصوصية)
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ../config/grafana/provisioning:/etc/grafana/provisioning:ro   # datasource + لوحات ككود (reproducible)
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-3001}:3000"   # واجهة محلية فقط افتراضياً (R-LAW-06)
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
 networks:
   internal:
     driver: bridge
@@ -148,3 +212,5 @@ volumes:
   postgres-openwebui-data:
   hf-cache:        # أوزان الموديلات من HuggingFace (قابل لإعادة الإنشاء — لا يحتاج نسخاً احتياطياً)
   vllm-cache:      # كاش torch.compile لـ vLLM (قابل لإعادة الإنشاء)
+  prometheus-data: # سلاسل المقاييس الزمنية (النوع الثاني، ADR-031؛ احتفاظ 30 يوماً)
+  grafana-data:    # حالة Grafana (النوع الثاني، ADR-031)

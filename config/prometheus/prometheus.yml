@@ -1,0 +1,26 @@
+# llm-platform — إعداد كشط المقاييس (النوع الثاني، ADR-031).
+# يكشط vLLM + LiteLLM على شبكة compose الداخلية (لا كشف منافذ — R-ARCH-24).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # محرّك vLLM: /metrics (gpu_cache_usage، num_requests_running/waiting، TTFT، tokens/s، preemptions).
+  # /metrics في vLLM بلا مصادقة (كـ /health) — لا يحتاج مفتاحاً.
+  - job_name: vllm
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["vllm:8000"]
+
+  # بوّابة LiteLLM: /metrics محجوب (401 — يتطلّب إصدار enterprise؛ مُتحقَّق حيّاً 2026-07-09 حتى بمفتاح master).
+  # كلفة/إنفاق البوّابة متوفّرة queryable في postgres-litellm (SpendLogs) — الرصد المالي هناك لا هنا.
+  # لتفعيلها لاحقاً (enterprise): أزل التعليق + أضف bearer_token_file بمفتاح مخوَّل.
+  # - job_name: litellm
+  #   metrics_path: /metrics
+  #   static_configs:
+  #     - targets: ["litellm:4000"]
+
+  # Prometheus يرصد نفسه (صحّة الكشط).
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

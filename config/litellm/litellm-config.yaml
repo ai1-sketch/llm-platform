@@ -16,7 +16,8 @@ model_list:
 
 litellm_settings:
   drop_params: true
-  json_logs: true        # تسجيل مهيكل JSON (R-ERR-14)
+  json_logs: true                    # تسجيل مهيكل JSON (R-ERR-14)
+  turn_off_message_logging: true     # تعتيم محتوى الرسائل/الردود في السجلّات (R-ERR-18) — خصوصية بيانات عربية حسّاسة؛ التوكنات/الكلفة تبقى مسجّلة
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

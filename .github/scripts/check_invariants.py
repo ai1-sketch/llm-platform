@@ -1,8 +1,8 @@
 """فحص ثوابت المعمارية على compose — حوكمة قابلة للتنفيذ (ADR-026).
 
 يحوّل ثوابت كانت تُفحَص بالعين إلى فحص آليّ في CI:
-- R-ARCH-31: أسماء خدمات Docker = القائمة المعتمدة بالضبط (لا زائدة ولا ناقصة، 5 خدمات).
-- R-ARCH-24: لا تكشف منفذاً سوى الواجهة (`open-webui`).
+- R-ARCH-31: أسماء خدمات Docker = القائمة المعتمدة بالضبط (5 أساسية + 2 مراقبة اختيارية = 7).
+- R-ARCH-24: لا تكشف منفذاً سوى الواجهة (`open-webui`) ولوحة المراقبة المحلية (`grafana`، ADR-031).
 - R-LAW-06: منفذ الواجهة يربط على 127.0.0.1 افتراضياً (لا 0.0.0.0).
 - R-ARCH-40: كل صورة مثبّتة بـ @sha256: (إعادة إنتاج حتمية — لا وسوم متغيّرة).
 - R-LAW-03/R-ARCH-02/20: لا أسرار/بيانات/نماذج متتبَّعة في git (‎.env، backups/، models/).
@@ -19,9 +19,19 @@ import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 COMPOSE = REPO_ROOT / "compose" / "docker-compose.yml"
-# R-ARCH-31 — المحرّك vllm منذ ADR-028؛ قاعدتان مخصّصتان منذ ADR-030
-ALLOWED = {"open-webui", "litellm", "vllm", "postgres-litellm", "postgres-openwebui"}
-PUBLIC = "open-webui"  # الخدمة الوحيدة المسموح لها بكشف منفذ (R-ARCH-24)
+# R-ARCH-31 — vllm منذ ADR-028؛ قاعدتان مخصّصتان منذ ADR-030؛ prometheus+grafana (مراقبة) منذ ADR-031
+ALLOWED = {
+    "open-webui",
+    "litellm",
+    "vllm",
+    "postgres-litellm",
+    "postgres-openwebui",
+    "prometheus",
+    "grafana",  # طبقة المراقبة الاختيارية (profile: monitoring — ADR-031)
+}
+PUBLIC = "open-webui"  # الواجهة العامة الوحيدة (R-ARCH-24)
+# خدمات يُسمح لها بكشف منفذ محلي 127.0.0.1 (R-LAW-06): الواجهة + grafana (ADR-031)
+PORT_ALLOWED = {"open-webui", "grafana"}
 # مسارات يجب ألا تُتتبَّع في git (R-ARCH-02): بيانات/نماذج قابلة لإعادة التوليد أو ضخمة
 FORBIDDEN_TRACKED_PREFIXES = ("backups/", "models/")
 
@@ -44,14 +54,14 @@ def check(data: dict) -> list[str]:
         if image and "@sha256:" not in str(image):
             errors.append(f"R-ARCH-40: صورة الخدمة '{name}' غير مثبّتة بـ @sha256: {image}")
         ports = svc.get("ports") or []
-        if ports and name != PUBLIC:
-            errors.append(f"R-ARCH-24: الخدمة '{name}' تكشف منفذاً (المسموح: {PUBLIC} فقط)")
-        if ports and name == PUBLIC:
-            # يجب أن يتضمّن تعريف المنفذ 127.0.0.1 حرفياً (كافتراضي لـ OPENWEBUI_BIND)؛
+        if ports and name not in PORT_ALLOWED:
+            errors.append(f"R-ARCH-24: '{name}' تكشف منفذاً (المسموح: {sorted(PORT_ALLOWED)})")
+        if ports and name in PORT_ALLOWED:
+            # يجب أن يتضمّن تعريف المنفذ 127.0.0.1 حرفياً (كافتراضي للربط)؛
             # مجرّد ذكر اسم المتغيّر لا يكفي — افتراضي 0.0.0.0 خرقٌ لـ R-LAW-06 (تدقيق 2026-07-02)
             bad = [p for p in ports if "127.0.0.1" not in str(p)]
             if bad:
-                errors.append(f"R-LAW-06: منفذ {PUBLIC} لا يربط على 127.0.0.1 افتراضياً: {bad}")
+                errors.append(f"R-LAW-06: منفذ '{name}' لا يربط على 127.0.0.1 افتراضياً: {bad}")
     return errors
 
 

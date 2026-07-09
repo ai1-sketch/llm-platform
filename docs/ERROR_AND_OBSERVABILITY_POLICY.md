@@ -90,9 +90,9 @@ ERROR: request failed
 
 ## 5) التسجيل المهيكل (Structured JSON logging)
 
-- **R-ERR-14** كل السجلات **JSON سطر واحد** (لا نص حر متعدّد الأسطر). الحقول الأساسية: `timestamp` (UTC ISO-8601), `level`, `service`, `request_id`, `code` (إن وُجد), `message`. يُضبط في الخدمات الجاهزة عبر config.
-- **R-ERR-15** **Correlation/Request ID إلزامي:** يُولَّد عند أول دخول (gateway)، يُمرَّر لكل طبقة لاحقة عبر header `X-Request-ID`، ويظهر في كل سطر log للطلب. هو الخيط الذي يربط الطلب عبر الطبقات.
-- **R-ERR-16** قيمة حقل `service` تطابق **اسم خدمة Docker** المعتمد في `docker-compose.yml` (R-ARCH-31): `open-webui`, `litellm`, `vllm`, `postgres-litellm`, `postgres-openwebui` (5 خدمات؛ المحرّك `vllm` منذ [ADR-028](DECISIONS.md)؛ قاعدتان مخصّصتان منذ [ADR-030](DECISIONS.md)؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine` بعد [ADR-025](DECISIONS.md)). هذا شرط نجاح "grep واحد على `request_id` عبر الطبقات" (R-ERR-19). الخدمات الخمس صور جاهزة بسجلّها: `litellm` JSON عبر config (`json_logs`) وهي **موضع الرصد الحرج** (request_id + الكلفة عند البوّابة)؛ `vllm` نصّي افتراضي بمستوى مضبوط (`VLLM_LOGGING_LEVEL`) — **استثناء موثّق لـ R-ERR-14** كنمط قاعدتَي postgres (خلف البوّابة، ليست مسار طلبات مباشراً).
+- **R-ERR-14** سجلّ **LiteLLM** (موضع الرصد الحرج) = **JSON سطر واحد** عبر `json_logs` (`timestamp` UTC، `level`، `request_id`=litellm_call_id، `message`، + سطر الكلفة). بقيّة الصور الجاهزة (`open-webui`، `vllm`، قاعدتا postgres) تُصدر سجلّها النصّي الخاص بمستوى مضبوط — **استثناء موثّق لـ JSON** (لا نملك شيفرتها لنفرض شكلها؛ تُربَط بالحاوية + الطابع الزمني). حقل `service` (=اسم خدمة Docker) والأكواد المهيكلة يُفرَضان على **كودنا** حين يوجد adapter — لا كود لنا على المسار حالياً ([ADR-025](DECISIONS.md)).
+- **R-ERR-15** **Correlation/Request ID:** على master الحالي يُلتقط **عند البوّابة** (LiteLLM يولّد `litellm_call_id`، يظهر في سجلّها + سطر الكلفة). **التمرير الكامل عبر الطبقات** (OWUI→LiteLLM→vLLM عبر header `X-Request-ID`) **مؤجَّل** حتى وجود adapter نملك كوده على المسار — أُثبت سابقاً بخدمة `memory` المتقاعدة ([ADR-025](DECISIONS.md))، يُستأنف من فرع `future/context-engine`؛ مُتتبَّع في [PROGRESS_MAP](PROGRESS_MAP.md).
+- **R-ERR-16** قيمة حقل `service` تطابق **اسم خدمة Docker** المعتمد في `docker-compose.yml` (R-ARCH-31): `open-webui`, `litellm`, `vllm`, `postgres-litellm`, `postgres-openwebui` (5 خدمات؛ المحرّك `vllm` منذ [ADR-028](DECISIONS.md)؛ قاعدتان مخصّصتان منذ [ADR-030](DECISIONS.md)؛ `memory`/`embeddings` متقاعدتان إلى فرع `future/context-engine` بعد [ADR-025](DECISIONS.md)). الخدمات صور جاهزة بسجلّها: `litellm` JSON عبر config (`json_logs`) وهي **موضع الرصد الحرج** (request_id + الكلفة عند البوّابة)؛ و`open-webui` و`vllm` وقاعدتا postgres تُصدر سجلّها النصّي الخاص بمستوى مضبوط — **استثناء موثّق لـ R-ERR-14** (صور لا نملك شيفرتها، ولا تُصدر حقل `service` قابلاً للضبط). لذا على master الحالي تطابق حقل `service` عبر **كل** الطبقات **غير محقَّق** (يُقارَب بالربط باسم الحاوية + الطابع الزمني)؛ يكتمل مع أوّل adapter نملكه — شرط R-ERR-19 المؤجَّل.
 - **R-ERR-17** المستويات: `DEBUG`, `INFO` (افتراضي), `WARN`, `ERROR` (فشل طلب), `CRITICAL` (فشل يهدّد الخدمة). يُضبط عبر config.
 - **R-ERR-18** ممنوع طباعة الأسرار/محتوى المستخدم الحسّاس في السجل؛ المفاتيح تُقنَّع (`sk-...abcd`). السجل يخرج إلى `stdout`/`stderr` فقط (عقد الحاويات)، لا إلى ملفات داخل الحاوية.
 
@@ -100,7 +100,7 @@ ERROR: request failed
 
 ## 6) الفشل الصاخب + سرعة الالتقاط (Fail loud, find fast)
 
-- **R-ERR-19** **معيار النجاح:** بمعرفة `request_id` وحده يصل المحقّق إلى السطر الجذري عبر كل الطبقات بأمر بحث واحد (`grep` على `request_id`).
+- **R-ERR-19** **معيار النجاح (Phase 1):** بمعرفة `request_id` يصل المحقّق إلى السطر الجذري في سجلّ **LiteLLM** (موضع الرصد الحرج) بأمر `grep` واحد. **الانتشار الكامل عبر كل الطبقات** (OWUI/vLLM) **مؤجَّل** حتى وجود adapter نملك كوده — أُثبت سابقاً بخدمة `memory` المتقاعدة ([ADR-025](DECISIONS.md))؛ مُتتبَّع في [PROGRESS_MAP](PROGRESS_MAP.md).
 - **R-ERR-20** كل سطر `ERROR` يحوي `code` + `message` كافياً ليبدأ الإصلاح **دون قراءة الكود**. سطر خطأ يتطلّب فتح المصدر لفهمه = سطر خطأ فاشل.
 - **R-ERR-21** **الفشل الصاخب:** عند خطأ غير متوقّع، يُسجَّل `ERROR`/`CRITICAL` مهيكل ويُرفض الطلب بوضوح — لا تدهور صامت ولا نتيجة جزئية مضلِّلة.
 
@@ -112,5 +112,5 @@ ERROR: request failed
 - [ ] كل خطأ من كودنا يحوي `code` + `message` + `request_id` (+`type` للعميل) (§2 / R-ERR-04, R-ERR-06).
 - [ ] لا `catch`/`except` فارغ أو ابتلاع صامت؛ linter أخضر (§3).
 - [ ] `healthcheck` مربوط لكل خدمة في `docker-compose.yml` (§4).
-- [ ] log JSON بسطر واحد + `request_id` يمرّ عبر الطبقات + `service` = اسم خدمة Docker (§5).
+- [ ] سجلّ LiteLLM JSON بسطر واحد + `request_id` (litellm_call_id) + سطر الكلفة (§5)؛ الانتشار عبر الطبقات مؤجَّل (Phase 1، R-ERR-15/19).
 - [ ] كل سطر `ERROR` قابل للتصرّف دون قراءة الكود (§6 / R-ERR-20).

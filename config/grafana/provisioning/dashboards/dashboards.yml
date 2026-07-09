@@ -1,0 +1,13 @@
+# llm-platform — مزوّد لوحات Grafana (يحمّل لوحات JSON من نفس المجلّد — النوع الثاني، ADR-031).
+apiVersion: 1
+providers:
+  - name: llm-platform
+    orgId: 1
+    folder: llm-platform
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false
