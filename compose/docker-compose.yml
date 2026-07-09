@@ -166,6 +166,7 @@ services:
       - "--storage.tsdb.retention.time=30d"
     volumes:
       - ../config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../config/prometheus/litellm-metrics.token:/etc/prometheus/litellm-metrics.token:ro   # مفتاح كشط /metrics للبوّابة (placeholder متتبَّع؛ استبدله محليّاً — RUNBOOK)
       - prometheus-data:/prometheus
     networks: [internal]
     healthcheck:

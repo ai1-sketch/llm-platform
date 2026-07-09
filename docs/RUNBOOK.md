@@ -99,7 +99,7 @@ docker compose --env-file config/env/.env -f compose/docker-compose.yml --profil
 # إطفاؤها:  docker compose --env-file config/env/.env -f compose/docker-compose.yml --profile monitoring down
 ```
 - **يُكشَط:** vLLM `/metrics` كل 15ث (احتفاظ 30 يوماً): امتلاء KV، طابور running/waiting، TTFT p50/95/99، tokens/s، preemptions، e2e latency، prefix-cache hit%. — **لا يُكشَط محتوى الطلبات** (مقاييس عدّية فقط).
-- **litellm `/metrics` غير مكشوط** (محجوب 401 — enterprise، مُتحقَّق حيّاً)؛ **كلفة/إنفاق البوّابة** في `postgres-litellm` (SpendLogs، queryable).
+- **litellm `/metrics` مكشوط** عبر callback prometheus (طلبات/كلفة/زمن على مستوى البوّابة) — يحتاج مفتاحاً في `config/prometheus/litellm-metrics.token`. **افتراضاً placeholder** → هدف litellm يظهر `down` (غير قاتل) حتى تضع مفتاح litellm صالحاً. **لتفعيله بأمان:** ضع المفتاح ثم `git update-index --skip-worktree config/prometheus/litellm-metrics.token` كي لا يُرفَع. **الكلفة التفصيلية per-user** في `postgres-litellm` (SpendLogs، مُثبَتة per-user).
 - prometheus **داخلي فقط** (لا منفذ)؛ استعلامه: `docker exec llm-platform-prometheus-1 wget -qO- 'http://localhost:9090/api/v1/query?query=vllm:kv_cache_usage_perc'`.
 - **حذفها كليّاً:** احذف خدمتَي `prometheus`/`grafana` + volumeيهما من [compose](../compose/docker-compose.yml) (قابل للحذف بسهولة — ADR-031؛ حدّث `check_invariants.py` ALLOWED/PORT_ALLOWED).
 
