@@ -7,6 +7,9 @@ set -e
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -v app_pw="$OPENWEBUI_DB_PASSWORD" <<'EOSQL'
 SELECT 'CREATE ROLE openwebui LOGIN PASSWORD ' || quote_literal(:'app_pw')
 WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'openwebui')\gexec
+-- دوران كلمة السرّ: CREATE أعلاه يتخطّى دوراً موجوداً، فلا يُحدّث كلمة السرّ عند تغيير .env.
+-- ALTER (idempotent) يزامنها فعلاً عند إعادة تطبيق السكربت يدوياً على volume موجود (RUNBOOK).
+ALTER ROLE openwebui WITH LOGIN PASSWORD :'app_pw';
 SELECT 'CREATE DATABASE openwebui OWNER openwebui'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'openwebui')\gexec
 -- لا CONNECT افتراضي عبر PUBLIC (يحمي من أي دور مستقبلي على هذه النسخة)
