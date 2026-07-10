@@ -92,6 +92,26 @@ find backups -type f \( -name '*.enc' -o -name '*.tgz' \) -mtime +30 -delete
 | SpendLogs (`postgres-litellm`) | سجلّ الإنفاق per-user (`end_user`) | `DELETE FROM "LiteLLM_SpendLogs" WHERE end_user = '<user-id>';` |
 > ⚠️ النسخ الاحتياطية المشفّرة تبقي المستخدم حتى انتهاء الاحتفاظ (30 يوماً) — RTBF مُقيَّد بدورة التدوير. (لا أتمتة الآن — إجراء موثّق؛ الأتمتة محفّزها أوّل قسم حقيقي — §5.)
 
+## التعافي الذاتي للمحرّك (watchdog — الموجة B/B3)
+`restart: unless-stopped` يعيد الحاوية عند **موت** العملية، لكن **لا** يعالج "التعليق الحيّ" (العملية حيّة لكن `unhealthy`). الحلّ الآمن **بلا docker socket داخل حاوية**: مراقب خارجي على المضيف يقرأ **حكم صحّة Docker نفسه** (يحترم `start_period` تلقائياً) ويعيد تشغيل أي حاوية `unhealthy` في المشروع فقط. **آمن:** يعمل بصلاحية docker للمستخدم على المضيف — لا سطح امتياز جديد؛ ويتصرّف فقط على حكم Docker `unhealthy` فلا يقتل أثناء الإقلاع البارد. **الإنتاج (Linux/K8s):** يُستبدَل بـ **liveness probe** ([ADR-007](DECISIONS.md)).
+```bash
+# Linux/WSL — cron كل دقيقتين:  */2 * * * *  bash /path/watchdog.sh
+for c in $(docker ps --filter "label=com.docker.compose.project=llm-platform" --format '{{.Names}}'); do
+  h=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$c")
+  [ "$h" = "unhealthy" ] && { echo "$(date -Iseconds) watchdog: $c unhealthy → restart"; docker restart "$c"; }
+done
+```
+```powershell
+# Windows (PowerShell) — watchdog.ps1:
+docker ps --filter "label=com.docker.compose.project=llm-platform" --format "{{.Names}}" | ForEach-Object {
+  $h = docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' $_
+  if ($h -eq 'unhealthy') { docker restart $_ | Out-Null }
+}
+# تسجيل مجدول (كل دقيقتين، مستوى المستخدم):
+#   schtasks /create /tn "llm-platform-watchdog" /tr "powershell -NoProfile -File <path>\watchdog.ps1" /sc minute /mo 2 /f
+#   إزالة:  schtasks /delete /tn "llm-platform-watchdog" /f
+```
+
 ## اختبار دخان (smoke) يدوي — مسار الدردشة + request_id
 CI لا يشغّل الموديل (يحتاج GPU)، فالتحقّق end-to-end يدوي عبر هذا السكربت:
 ```bash
