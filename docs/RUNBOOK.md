@@ -33,11 +33,16 @@ docker exec llm-platform-litellm-1 python -c "
 import os, httpx
 r = httpx.post('http://localhost:4000/key/generate',
   headers={'Authorization': 'Bearer ' + os.environ['LITELLM_MASTER_KEY']},
-  json={'key_alias': 'open-webui'}, timeout=30)
+  json={'key_alias': 'open-webui',
+        'rpm_limit': 240,             # حماية المحرّك المشترك من الإغراق (فعّالة الآن؛ 1–10 مستخدمين ≈ 4 طلب/ث)
+        'max_parallel_requests': 16,  # سقف التزامن (المحرّك max-num-seqs=4 + طابور)
+        'max_budget': 100, 'budget_duration': '30d'},  # سقف كلفة: خامل مع الموديل المجاني (spend=0)، فعّال فور إضافة مزوّد مدفوع (Gemini)
+  timeout=30)
 print(r.json()['key'])"
 # ضع الناتج في OPENWEBUI_LITELLM_KEY بـ config/env/.env ثم:
 # docker compose --env-file config/env/.env -f compose/docker-compose.yml up -d open-webui
 ```
+> **حدود المفتاح (الموجة B، تدقيق 2026-07):** كل مفتاح يُولَّد بحدود (معدّل/تزامن/كلفة) — حماية المحرّك المشترك + سقف الكلفة. **لتطبيقها على مفتاح قائم دون تجديد:** بدّل `/key/generate` بـ `/key/update` وأضف `'key': '<المفتاح الحالي>'` مع نفس الحقول.
 
 ## أعطال شائعة → الحل
 | العَرَض | السبب/الحل |
@@ -62,17 +67,30 @@ print(r.json()['key'])"
 - **ℹ️ الرؤية (الصور) معلّقة مؤقتاً ([ADR-028](DECISIONS.md)):** لا موديل multimodal يتّسع على 6GB تحت vLLM — تعود مع GPU أكبر بتبديل الموديل (بلا mmproj؛ برج الرؤية داخل checkpoint HF). وسوم `<think>` من Qwen3 تصل inline وOWUI يطويها (لا `--reasoning-parser` — علّة عرض مفتوحة open-webui#24697).
 
 ## نسخ احتياطي واستعادة (طبقة البيانات — حيث كل القيمة)
-بعد [ADR-029](DECISIONS.md)/[ADR-030](DECISIONS.md): **بيانات OWUI (ميتاداتا + متجهات) في نسخته `postgres-openwebui`**، وحالة البوّابة في `postgres-litellm` — لا SQLite/Chroma. النسخة الأساسية = **`pg_dump` لكل نسخة** (بحساب إدارتها). يبقى `openwebui-data` يحوي **ملفّات الرفع (blobs)** وكاشاً قابلاً لإعادة الإنشاء فقط. **فقدان `LITELLM_SALT_KEY` غير قابل للاستعادة** (R-ARCH-44) — احفظ `.env` بأمان خارج git. *(`hf-cache`/`vllm-cache` قابلان لإعادة الإنشاء.)*
+بعد [ADR-029](DECISIONS.md)/[ADR-030](DECISIONS.md): **بيانات OWUI (ميتاداتا + متجهات) في نسخته `postgres-openwebui`**، وحالة البوّابة في `postgres-litellm` — لا SQLite/Chroma. النسخة الأساسية = **`pg_dump` لكل نسخة** (بحساب إدارتها). يبقى `openwebui-data` يحوي **ملفّات الرفع (blobs)** وكاشاً قابلاً لإعادة الإنشاء فقط. **فقدان `LITELLM_SALT_KEY` غير قابل للاستعادة** (R-ARCH-44) — احفظ `.env` بأمان خارج git. *(`hf-cache`/`vllm-cache` قابلان لإعادة الإنشاء.)* **النسخ مشفّرة (الموجة B):** فقدان `BACKUP_PASSPHRASE` = النسخ غير قابلة للاستعادة — احفظه بأمان مع `.env`.
 ```bash
 mkdir -p backups
-# كل قاعدة من نسختها (منطقيّاً، بلا إيقاف) — بحساب إدارة النسخة (ADR-029/030)
-docker exec llm-platform-postgres-litellm-1   pg_dump -U postgres -d litellm   | gzip > backups/litellm-$(date +%F).sql.gz
-docker exec llm-platform-postgres-openwebui-1 pg_dump -U postgres -d openwebui | gzip > backups/openwebui-$(date +%F).sql.gz
-# ملفّات الرفع (blobs على الـ volume)
+export BACKUP_PASSPHRASE=$(grep '^BACKUP_PASSPHRASE=' config/env/.env | cut -d= -f2-)   # سرّ التشفير (من .env، git-ignored)
+# كل قاعدة من نسختها (منطقيّاً، بلا إيقاف) → gzip → تشفير AES-256 (openssl؛ لا يحتاج gpg — متوفّر على المضيف)
+docker exec llm-platform-postgres-litellm-1   pg_dump -U postgres -d litellm   | gzip | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE > backups/litellm-$(date +%F).sql.gz.enc
+docker exec llm-platform-postgres-openwebui-1 pg_dump -U postgres -d openwebui | gzip | openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE > backups/openwebui-$(date +%F).sql.gz.enc
+# ملفّات الرفع (blobs) — خذها مباشرةً بعد نسخ القاعدة وفي وقت هدوء (ليست لقطة ذرّية بين القاعدة والـ blobs؛ التتالي يقلّل التفكّك — لقطة متّسقة تماماً تحتاج إيقاف كتابة/filesystem snapshot، مؤجَّلة)
 docker run --rm -v llm-platform_openwebui-data:/d -v "$PWD/backups":/b alpine \
   tar czf /b/owui-uploads-$(date +%F).tgz -C /d uploads
-# استعادة قاعدة: zcat backups/openwebui-<تاريخ>.sql.gz | docker exec -i llm-platform-postgres-openwebui-1 psql -U postgres -d openwebui
+# تدوير/احتفاظ: احذف ما تجاوز 30 يوماً (سياسة قابلة للضبط)
+find backups -type f \( -name '*.enc' -o -name '*.tgz' \) -mtime +30 -delete
+# استعادة قاعدة: openssl enc -d -aes-256-cbc -pbkdf2 -pass env:BACKUP_PASSPHRASE -in backups/openwebui-<تاريخ>.sql.gz.enc | zcat | docker exec -i llm-platform-postgres-openwebui-1 psql -U postgres -d openwebui
 ```
+
+### حذف بيانات مستخدم (حق النسيان / RTBF) — أين تعيش البيانات
+عند طلب حذف بيانات مستخدم (التزام قانوني لبيانات HR — [ADR-032](DECISIONS.md))، البيانات موزّعة على أربعة مخازن:
+| المخزن | ما يحويه | كيفية الحذف |
+|---|---|---|
+| OWUI (`postgres-openwebui`) | الحساب + المحادثات + الذاكرة per-user | حذف المستخدم من واجهة أدمن OWUI (يزيل الحساب + محادثاته + ذاكرته) |
+| معرفة مشتركة (Knowledge/RAG) | مستندات رفعها لقواعد مشتركة | يدويّاً — الملكية للقاعدة لا للحساب؛ احذف المستند من القاعدة إن لزم |
+| blobs (`openwebui-data/uploads`) | ملفّات الرفع الخام | تُحذف مع المحادثة عادةً؛ تحقّق يدويّاً من بقايا في `uploads/` |
+| SpendLogs (`postgres-litellm`) | سجلّ الإنفاق per-user (`end_user`) | `DELETE FROM "LiteLLM_SpendLogs" WHERE end_user = '<user-id>';` |
+> ⚠️ النسخ الاحتياطية المشفّرة تبقي المستخدم حتى انتهاء الاحتفاظ (30 يوماً) — RTBF مُقيَّد بدورة التدوير. (لا أتمتة الآن — إجراء موثّق؛ الأتمتة محفّزها أوّل قسم حقيقي — §5.)
 
 ## اختبار دخان (smoke) يدوي — مسار الدردشة + request_id
 CI لا يشغّل الموديل (يحتاج GPU)، فالتحقّق end-to-end يدوي عبر هذا السكربت:
