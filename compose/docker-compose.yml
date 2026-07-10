@@ -184,7 +184,7 @@ services:
 
   grafana:                                   # لوحات المقاييس — على 127.0.0.1 فقط (R-ARCH-24 مُوسَّع، ADR-031)
     profiles: ["monitoring"]
-    image: grafana/grafana:11.4.1@sha256:413503f21b7e854811d74ef68ae1d3dce4c4814aef5daf4424c4a7ef6d42c31d   # مُثبَّت بـ digest (2026-07-09)
+    image: grafana/grafana:12.3.8@sha256:b1bfd4d07801edb308c2578a1161acfc75bc580501f5d80d866b1b9a3809d004   # مُثبَّت بـ digest (12.3.8 — ترقية من 11.4.1 المنتهي الدعم، تدقيق 2026-07-10)
     restart: unless-stopped
     logging: *default-logging
     security_opt: ["no-new-privileges:true"]   # تقسية: منع تصعيد الامتياز (setuid) — تدقيق 2026-07-10
@@ -197,6 +197,7 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "false"                     # لا وصول مجهول
       GF_ANALYTICS_REPORTING_ENABLED: "false"                # لا إرسال تحليلات خارجية (خصوصية)
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"                 # لا سحب تطبيقات افتراضية من grafana.com (grafana بلا egress — internal:true؛ يوقف أخطاء plugin.backgroundinstaller — ترقية 12.3.8، تدقيق 2026-07-10)
     volumes:
       - ../config/grafana/provisioning:/etc/grafana/provisioning:ro   # datasource + لوحات ككود (reproducible)
       - grafana-data:/var/lib/grafana
