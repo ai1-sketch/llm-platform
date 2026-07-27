@@ -12,3 +12,5 @@ gpu-memory-utilization: 0.75         # الافتراضي 0.92 يسبّب OOM ع
 max-model-len: 8192                  # نافذة مطابقة لما قبل التحوّل (ADR-027)
 max-num-seqs: 4                      # تزامن متواضع يناسب 1–10 مستخدمين على 6GB
 kv-cache-dtype: fp8                  # يقلّص ذاكرة KV للنصف (fp8_e4m3 مدعوم على Ada) — يتيح نافذة 8192 على 6GB
+enable-auto-tool-choice: true        # يفعّل tool_choice:"auto" الذي ترسله OWUI (ميزات/بحث/عناوين)؛ بدونه vLLM يرفض بـ 400
+tool-call-parser: hermes             # محلّل استدعاء الأدوات لعائلة Qwen3 (صيغة <tool_call> الوسمية) — مطلوب مع enable-auto-tool-choice

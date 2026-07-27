@@ -1,0 +1,13 @@
+You are performing an INDEPENDENT senior-architect review of this repository. Read the repo thoroughly (it is small: governance docs in docs/, compose/docker-compose.yml, config/, README.md, PROJECT_BLUEPRINT.md, .github/). NOTE: the docs are in ARABIC — read them; the platform is an internal company LLM platform.
+
+WHAT THIS PROJECT IS: an internal, on-prem LLM platform. 5 docker services: Open WebUI v0.10.2 (frontend + RBAC + RAG) -> LiteLLM (gateway) -> vLLM (engine, Qwen3-4B test model) + postgres-litellm + postgres-openwebui (pgvector). Governance-heavy: a Constitution + Architecture Rules + Error/Observability policy + an ADR log (docs/DECISIONS.md, ADR-001..030). Core principles: config-driven (12-factor), anti-bloat (§5, "default is NO"), least-privilege DB roles, "same shape bigger boxes" (model/engine swappable via config), Arabic-first usage. There is essentially NO application code yet — the platform is compose + config + governance docs; a governed file-intake channel is DESIGNED but not built.
+
+YOUR TASK — deliver a COMPLETE, HONEST review covering:
+1. ARCHITECTURE: is the layering (frontend -> gateway -> engine -> model + dedicated postgres per app) sound? Any structural weakness, coupling, or single-point-of-failure worth flagging?
+2. SECURITY: review compose/docker-compose.yml, config/, .github/SECURITY.md, the least-privilege DB setup (config/postgres/*-init/*.sh), image digest pinning, secrets handling, port exposure (only open-webui on 127.0.0.1), the admin-bypass reality. Find concrete weaknesses or misconfigurations.
+3. CORRECTNESS: scan compose + config + the CI script (.github/scripts/check_invariants.py) + ci.yml for real bugs, inconsistencies, or fragilities (env var contract, healthchecks, depends_on, init-script logic, WSL2 notes).
+4. GOVERNANCE QUALITY: are the docs internally consistent? Contradictions between CONSTITUTION / ARCHITECTURE_RULES / DECISIONS / PROGRESS_MAP / README? Is the ADR log coherent (statuses, supersessions)? Is the governance proportionate or over-engineered for a ~1-user stage?
+5. WEAKNESSES & RISKS: the top things that would bite this project in production (it will hold sensitive Arabic HR/Finance data behind department isolation).
+6. IMPROVEMENTS: prioritized, concrete, actionable — what to fix/add next, and what is over-built and could be trimmed.
+
+Be specific: cite file paths and line numbers. Rank findings by severity (must-fix / should-fix / nice-to-have). Be candid about both strengths and weaknesses. Do NOT modify any files — this is read-only. End with a concise overall assessment and a prioritized action list.
