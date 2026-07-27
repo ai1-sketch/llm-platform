@@ -1,5 +1,7 @@
 # AGENTS.md — عقد المساعد (Auto-loaded)
 
+> **مالك المشروع (Project owner): Ali Odeh.**
+
 > يُحمّل تلقائياً مع كل جلسة. هذا الملف **تابع** للدستور، لا بديل عنه. عند أي تعارض، يسبق [CONSTITUTION](docs/CONSTITUTION.md).
 
 - **R-001** — المرجع الأعلى هو [docs/CONSTITUTION.md](docs/CONSTITUTION.md). اقرأه + [docs/PROGRESS_MAP.md](docs/PROGRESS_MAP.md) أولاً عند استئناف العمل.

@@ -1,5 +1,7 @@
 # تفعيل الرؤية (Vision) في llama-server لـ Gemma 4 E2B — مرجع بحثي
 
+> **مالك المشروع (Project owner): Ali Odeh.**
+
 > مرجع لقرار [ADR-014](../docs/DECISIONS.md). بحث موثّق (منتصف 2026). ليس وثيقة حوكمة (معفى من حدّ 180 سطر).
 
 ## ملف mmproj

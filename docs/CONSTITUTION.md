@@ -1,5 +1,7 @@
 # الدستور الهندسي للمشروع (Engineering Constitution)
 
+> **مالك المشروع (Project owner): Ali Odeh.**
+
 > الوثيقة الحاكمة العليا لمنصّة الـ LLM الداخلية. كل قرار، PR، أو إضافة قاعدة يُقاس عليها. عند التعارض، يسبق هذا الدستور أي وثيقة أخرى — بما فيها [CLAUDE.md](../CLAUDE.md) (عقد المساعد التابع له).
 >
 > **الحالة:** نافذة v1 (مُعتمدة ومُلزِمة) · **النطاق:** كل أعضاء الفريق والمساعدين (assistants) · **يُقرأ مع:** [ARCHITECTURE_RULES](ARCHITECTURE_RULES.md) · [ERROR_AND_OBSERVABILITY_POLICY](ERROR_AND_OBSERVABILITY_POLICY.md) · [DECISIONS](DECISIONS.md) · [PROGRESS_MAP](PROGRESS_MAP.md)

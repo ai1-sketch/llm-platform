@@ -6,6 +6,8 @@
 name = "llm-platform"
 version = "0.1.0"
 description = "Internal company LLM platform"
+authors = [{ name = "Ali Odeh" }]
+maintainers = [{ name = "Ali Odeh" }]
 requires-python = ">=3.12"
 
 [project.optional-dependencies]

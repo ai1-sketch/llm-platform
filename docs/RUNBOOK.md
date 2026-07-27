@@ -1,5 +1,7 @@
 # RUNBOOK — تشغيل المنصّة الحيّة (5 خدمات، OWUI أساسي، محرّك vLLM، قاعدتان مخصّصتان)
 
+> **مالك المشروع (Project owner): Ali Odeh.**
+
 > دليل تشغيلي موجز للستاك الفعلي بعد [ADR-025](DECISIONS.md)/[ADR-028](DECISIONS.md)/[ADR-030](DECISIONS.md): `open-webui` + `litellm` + `vllm` (Qwen3 4B، GPU) + `postgres-litellm` + `postgres-openwebui`. مصدر الحقيقة للإعداد = [compose/docker-compose.yml](../compose/docker-compose.yml) · [config/litellm/litellm-config.yaml](../config/litellm/litellm-config.yaml) · [config/vllm/vllm-config.yaml](../config/vllm/vllm-config.yaml) · [config/env/.env.example](../config/env/.env.example). الحالة في [PROGRESS_MAP](PROGRESS_MAP.md).
 
 ## التشغيل

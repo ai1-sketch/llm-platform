@@ -1,5 +1,7 @@
 # llm-platform — منصّة LLM الداخلية للشركة
 
+> **Created, owned, and maintained by [Ali Odeh](https://github.com/ai1-sketch).**
+
 منصّة خدمة نماذج لغوية (LLM) داخلية، تبدأ صغيرة على جهاز واحد ومصمّمة للنمو إلى السحابة دون إعادة بناء. المبدأ المركزي: **توحيد كل شيء خلف OpenAI-compatible API + حاويات Docker + إعدادات خارجية** — *"نفس الشكل، صناديق أكبر"*.
 
 > **الحالة:** Phase 1 شغّال end-to-end ✅ — **5 خدمات** في حاويات + CI. المحرّك = **vLLM** (موديل اختبار Qwen3 4B، [ADR-028](docs/DECISIONS.md)؛ الرؤية معلّقة مؤقتاً حتى GPU أكبر). الذاكرة/الملفات عبر ميزات **Open WebUI المدمجة** (RAG + Personalization Memory، [ADR-025](docs/DECISIONS.md))، تخزينها على **PostgreSQL + pgvector بنسخة مخصّصة** ([ADR-029](docs/DECISIONS.md)/[ADR-030](docs/DECISIONS.md)). الواجهة على http://127.0.0.1:3000.

@@ -1,5 +1,7 @@
 # Architecture Rules — قوانين المعمارية والحدود
 
+> **مالك المشروع (Project owner): Ali Odeh.**
+
 > وثيقة حاكمة لبنية مستودع `llm-platform`: المجلدات، اتجاه الاعتماد، الاستيراد/الحدود، التسمية، و config-driven. كل قاعدة `R-ARCH-NN` **قابلة للفحص** من مراجِع بشري أو linter / CI.
 >
 > **يُقرأ مع:** [CONSTITUTION](CONSTITUTION.md) · [ERROR_AND_OBSERVABILITY_POLICY](ERROR_AND_OBSERVABILITY_POLICY.md) · [DECISIONS](DECISIONS.md) · [PROGRESS_MAP](PROGRESS_MAP.md) · [../PROJECT_BLUEPRINT.md](../PROJECT_BLUEPRINT.md)

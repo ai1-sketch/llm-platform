@@ -1,5 +1,7 @@
 # المساهمة في llm-platform
 
+> **مالك المشروع والمشرف (Project owner & maintainer): Ali Odeh.**
+
 > اقرأ أولاً: [docs/PROGRESS_MAP.md](../docs/PROGRESS_MAP.md) (نقطة الاستئناف) ثم [docs/CONSTITUTION.md](../docs/CONSTITUTION.md) (الحاكم الأعلى).
 
 ## القواعد غير القابلة للتفاوض

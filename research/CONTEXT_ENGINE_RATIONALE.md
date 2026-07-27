@@ -1,5 +1,7 @@
 # Context Engine — الأساس والمبرّرات (Rationale خلف ADR-019)
 
+> **مالك المشروع (Project owner): Ali Odeh.**
+
 > ⚠️ **مُستبدَل كمسار أساسي بـ [ADR-025](../docs/DECISIONS.md) (2026-06-26):** المنصّة تعتمد الآن ميزات Open WebUI المدمجة (RAG + Memory)، والمحرّك المخصّص متقاعد إلى فرع `future/context-engine`. هذا الملف **مرجع تصميمي/مستقبلي** (مبرّرات المحرّك) — لا يصف المسار الفعّال الحالي.
 >
 > مرجع بحثي دائم يوثّق **لماذا** اخترنا تصميم Context Engine الحالي — كي يفهم أي مهندس لاحق القرار بعمق دون الاعتماد على ملفات مؤقتة. القرارات في [DECISIONS](../docs/DECISIONS.md) (ADR-019/020)، التصميم في [specs/CONTEXT_ENGINE_V1.md](../docs/specs/CONTEXT_ENGINE_V1.md). معفى من حدّ 180 سطر (R-ARCH-05، بحثي).

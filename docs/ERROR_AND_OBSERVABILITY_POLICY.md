@@ -1,5 +1,7 @@
 # Error & Observability Policy
 
+> **مالك المشروع (Project owner): Ali Odeh.**
+
 > سياسة الأخطاء والرصد لمنصّة `llm-platform`. تُقرأ مع [CONSTITUTION](CONSTITUTION.md) · [ARCHITECTURE_RULES](ARCHITECTURE_RULES.md) · [DECISIONS](DECISIONS.md) · [PROGRESS_MAP](PROGRESS_MAP.md).
 >
 > **الحالة:** نافذة v1 (مُعتمدة ومُلزِمة) · **Owner:** SRE · **النطاق (Phase 1):** المنصّة الفعلية — موديل محلي (vllm/GPU، [ADR-028](DECISIONS.md)) خلف LiteLLM + Open WebUI (تملك RAG + Memory، [ADR-025](DECISIONS.md)) + قاعدتَي postgres مخصّصتين ([ADR-030](DECISIONS.md)).
